@@ -9,7 +9,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.graph import graph_laplacian
 
 
-# TODO: Include a bias term
+# TODO: Include a intercept term
 # TODO: Check if using zero feature vectors is equivalent to not considering missing orthologs
 # TODO: Make tests that compare to regular RR if beta=0
 class RidgeRegression(BaseEstimator, ClassifierMixin):
@@ -42,7 +42,7 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
         self.normalize_laplacian = normalize_laplacian
         self.fit_intercept = fit_intercept
         self.w = None
-        self.intercept = None
+        self.intercept = 0
 
     def fit(self, X, X_species, y, orthologs, species_adjacency):
         """Fit the model
@@ -60,9 +60,9 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
             the orthologous sequences and their species. TIP: use an HDF5 file to store this information if the data
             doesn't fit into memory.
             ex: {0: {"species": [0, 3, 5],
-                     "X": [[0, 2, 1, 4],
-                           [9, 4, 3, 1],
-                           [0, 0, 2, 1]]},
+                     "X": [[0, 2, 1, 4],    # Ortholog 1
+                           [9, 4, 3, 1],    # Ortholog 2
+                           [0, 0, 2, 1]]},  # Ortholog 3
                  1: {"species": [1, 3],
                      "X": [[1, 4, 7, 6],
                            [4, 4, 9, 3]]}}
@@ -75,13 +75,12 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
         (see: http://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.StandardScaler.html).
 
         """
-
         # Find out how many species to consider
         n_species = species_adjacency.shape[0]
 
-        # If we
         if self.fit_intercept:
-            y_centered = (y - np.mean(y))/np.std(y)
+            raise NotImplementedError("Not done yet!")
+            #y_centered = (y - np.mean(y))/np.std(y)
         else:
             y_centered = y
 
