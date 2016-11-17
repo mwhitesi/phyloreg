@@ -58,7 +58,8 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
         orthologs: dict
             A dictionnary in which the keys are indices of X and the values are another dict, which contain
             the orthologous sequences and their species. TIP: use an HDF5 file to store this information if the data
-            doesn't fit into memory.
+            doesn't fit into memory. Note: assumes that there is at most 1 ortholog per species.
+
             ex: {0: {"species": [0, 3, 5],
                      "X": [[0, 2, 1, 4],    # Ortholog 1
                            [9, 4, 3, 1],    # Ortholog 2
