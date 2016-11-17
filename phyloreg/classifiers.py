@@ -35,7 +35,7 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
         The intercept of the model.
 
     """
-    def __init__(self, alpha=1.0, beta=1.0, normalize_laplacian=False, fit_intercept=True):
+    def __init__(self, alpha=1.0, beta=1.0, normalize_laplacian=False, fit_intercept=False):
         self.alpha = float(alpha)
         self.beta = float(beta)
         self.normalize_laplacian = normalize_laplacian
@@ -144,3 +144,24 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
         if self.w is None:
             raise RuntimeError("The algorithm must be fitted first!")
         return np.dot(X, self.w).reshape(-1,)
+
+
+if __name__ == "__main__":
+    # Check if when beta=0 we recover regular ridge regression
+    
+    X = np.random.rand(10, 5)
+    y = np.random.rand(10)
+
+    A = np.random.rand(3, 3)
+    A = np.dot(A.T, A)
+
+    should_be_ridge = RidgeRegression(alpha=1.0, beta=0.0)
+    should_be_ridge.fit(X=X,
+                        X_species=[0] * len(y),
+                        y=y,
+                        orthologs=dict([(i, {"species": [0, 1, 2], "X": np.random.rand(3, 5)}) for i in xrange(X.shape[0])]),
+                        species_adjacency=A)
+
+    regular_ridge = np.dot(np.dot(np.linalg.inv(np.dot(X.T, X) + np.eye(X.shape[1])), X.T), y)
+
+    assert np.allclose(should_be_ridge.w, regular_ridge)
