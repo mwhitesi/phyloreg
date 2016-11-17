@@ -10,7 +10,6 @@ from sklearn.utils.graph import graph_laplacian
 
 
 # TODO: Include a intercept term
-# TODO: Check if using zero feature vectors is equivalent to not considering missing orthologs
 # TODO: Make tests that compare to regular RR if beta=0
 class RidgeRegression(BaseEstimator, ClassifierMixin):
     """Ridge regression species-level with phylogenetic regularization
