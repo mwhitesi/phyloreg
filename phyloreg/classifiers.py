@@ -10,7 +10,6 @@ from sklearn.utils.graph import graph_laplacian
 
 
 # TODO: Include a intercept term
-# TODO: Make tests that compare to regular RR if beta=0
 class RidgeRegression(BaseEstimator, ClassifierMixin):
     """Ridge regression species-level with phylogenetic regularization
 
@@ -148,7 +147,7 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
 
 if __name__ == "__main__":
     # Check if when beta=0 we recover regular ridge regression
-    
+
     X = np.random.rand(10, 5)
     y = np.random.rand(10)
 
