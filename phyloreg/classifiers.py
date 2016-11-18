@@ -4,8 +4,6 @@
 """
 import h5py as h
 import numpy as np
-import sys
-from treestructure import getTreeDict
 
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.graph import graph_laplacian
@@ -148,17 +146,6 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
 
 
 if __name__ == "__main__":
-
-
-
-    # 100 Way alignment tree file name with full path
-    treefilename = 'modtree100'
-
-    # create tree dict
-    phylo = getTreeDict( treefilename )
-    print ( phylo )
-    sys.exit()
-
     # Check if when beta=0 we recover regular ridge regression
 
     X = np.random.rand(10, 5)
