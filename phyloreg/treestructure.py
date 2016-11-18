@@ -1,4 +1,5 @@
 
+
 def getTreeDict( treefilename )
 	phylo = dict()
 	
