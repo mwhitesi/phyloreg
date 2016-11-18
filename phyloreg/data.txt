@@ -1,0 +1,4 @@
+Each row of data file has 4098 columns
+
+Col1						Col2-4097			Col4098
+...region<example no.>.maf.<species name>	<feature vector>		<label>
