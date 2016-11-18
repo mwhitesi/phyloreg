@@ -1,6 +1,6 @@
 
 
-def getTreeDict( treefilename )
+def getTreeDict( treefilename ):
 	phylo = dict()
 	
 	parent = []
