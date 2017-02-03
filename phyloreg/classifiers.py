@@ -99,16 +99,18 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
             # H5py doesn't support integer keys
             if isinstance(orthologs, h.File):
                 i = str(i)
-            # Load the orthologs of X and create a matrix that also contains x
-            x_orthologs_species = [idx_by_species[s] for s in orthologs[i]["species"]]
-            x_orthologs_feats = orthologs[i]["X"]
 
-            X_tmp = np.zeros((len(species_graph_names), x.shape[0]))
-            X_tmp[x_orthologs_species] = x_orthologs_feats
-            X_tmp[idx_by_species[X_species[i]]] = x
+            if len(orthologs[i]["species"]) > 0:
+                # Load the orthologs of X and create a matrix that also contains x
+                x_orthologs_species = [idx_by_species[s] for s in orthologs[i]["species"]]
+                x_orthologs_feats = orthologs[i]["X"]
 
-            # Compute the efficient product and add it to the nasty product
-            matrix_to_invert += np.dot(np.dot(X_tmp.T, L), X_tmp)
+                X_tmp = np.zeros((len(species_graph_names), x.shape[0]))
+                X_tmp[x_orthologs_species] = x_orthologs_feats
+                X_tmp[idx_by_species[X_species[i]]] = x
+
+                # Compute the efficient product and add it to the nasty product
+                matrix_to_invert += np.dot(np.dot(X_tmp.T, L), X_tmp)
 
         # Compute the Phi^T x Phi matrix product that includes the labeled examples only
         matrix_to_invert += np.dot(X.T, X)
