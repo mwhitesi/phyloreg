@@ -81,16 +81,13 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
         idx_by_species = dict(zip(species_graph_names, range(len(species_graph_names))))
 
         if self.fit_intercept:
-            raise NotImplementedError("Not done yet!")
-            #y_centered = (y - np.mean(y))/np.std(y)
-        else:
-            y_centered = y
+            X = np.hstack((X, np.ones(X.shape[0]).reshape(-1, 1)))  # Add a feature for each example that serves as bias
 
         # Precompute the laplacian of the species graph
         # Note: we assume that there is one entry per species. This sacrifices a bit of memory, but allows the precomputation
         #       the graph laplacian.
         L = graph_laplacian(species_graph_adjacency, normed=self.normalize_laplacian)
-        L *= 2 * self.beta
+        L *= 2.0 * self.beta
 
         matrix_to_invert = np.zeros((X.shape[1], X.shape[1]))
 
@@ -104,8 +101,10 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
                 # Load the orthologs of X and create a matrix that also contains x
                 x_orthologs_species = [idx_by_species[s] for s in orthologs[i]["species"]]
                 x_orthologs_feats = orthologs[i]["X"]
+                if self.fit_intercept:
+                    x_orthologs_feats = np.hstack((x_orthologs_feats, np.ones(x_orthologs_feats.shape[0]).reshape(-1, 1)))  # Add this bias term
 
-                X_tmp = np.zeros((len(species_graph_names), x.shape[0]))
+                X_tmp = np.zeros((len(species_graph_names), x_orthologs_feats.shape[1]))
                 X_tmp[x_orthologs_species] = x_orthologs_feats
                 X_tmp[idx_by_species[X_species[i]]] = x
 
@@ -119,13 +118,8 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
         matrix_to_invert += self.alpha * np.eye(X.shape[1])
 
         # Compute the value of w, the predictor that minimizes the objective function
-        self.w = np.dot(np.dot(np.linalg.inv(matrix_to_invert), X.T), y_centered).reshape(-1,)
+        self.w = np.dot(np.dot(np.linalg.inv(matrix_to_invert), X.T), y).reshape(-1,)
 
-        if self.fit_intercept:
-            self.intercept = 0
-            raise NotImplementedError()
-        else:
-            self.intercept = 0
 
     def predict(self, X):
         """Compute predictions using the learned model
@@ -145,6 +139,8 @@ class RidgeRegression(BaseEstimator, ClassifierMixin):
         If scaling was used for fitting, the same transformation must be applied to X before computing predictions.
 
         """
+        if self.fit_intercept:
+            X = np.hstack((X, np.ones(X.shape[0]).reshape(-1, 1)))  # Add a feature for each example that serves as bias
         if self.w is None:
             raise RuntimeError("The algorithm must be fitted first!")
         return np.dot(X, self.w).reshape(-1,)
