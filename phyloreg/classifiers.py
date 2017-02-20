@@ -7,6 +7,7 @@ import numpy as np
 
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.graph import graph_laplacian
+from warnings import warn
 
 
 class RidgeRegression(BaseEstimator, ClassifierMixin):
@@ -169,7 +170,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         The fitted model's coefficients (last value is the intercept if fit_intercept=True).
 
     """
-    def __init__(self, alpha=1.0, beta=1.0, normalize_laplacian=False, fit_intercept=False, opti_max_iter=1000,
+    def __init__(self, alpha=1.0, beta=1.0, normalize_laplacian=False, fit_intercept=False, opti_max_iter=1e3,
                  opti_tol=1e-9):
         self.alpha = float(alpha)
         self.beta = float(beta)
@@ -248,11 +249,10 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         # TODO: Check if our method can also be expressed as a weighted least squares (see hastie: p. 121)
         # TODO: might be a bit faster.
         w = np.zeros(X.shape[1])  # Hastie says zero is a good starting point
-        w_old = np.ones(X.shape[1]) * np.infty
         # TODO: I used the difference in w as a way to evaluate convergence. The best would be to compute the loss
         # TODO: function, but I suspect that it would be more computationally intensive. Check if what I did is ok.
         iterations = 0
-        while np.linalg.norm(w_old - w, ord=2) > self.opti_tol or iterations >= self.opti_max_iter:
+        while iterations < self.opti_max_iter:
             p = np.exp(np.dot(X, w))
             p /= (1 + p)
             gradient = np.dot(X.T, y - p) - 2 * self.alpha * w - 4 * self.beta * np.dot(OLO, w)
@@ -261,9 +261,17 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             subgradient = -np.dot(np.dot(X.T, W), X) - 2 * self.alpha * np.eye(X.shape[1]) - 4 * self.beta * OLO
 
             update = np.dot(np.linalg.inv(subgradient), gradient)
-            w_old = w.copy()
             w -= update
             iterations += 1
+
+            # Check for convergence
+            if np.linalg.norm(update, ord=2) <= self.opti_tol:
+                break
+
+        else:  # Executed if the loop ends after its condition is violated (not on break)
+            warn("The maximum number of iterations was reached prior to convergence. Try increasing the number of "
+                 "iterations.")
+
         self.w = w
 
     def predict(self, X):
