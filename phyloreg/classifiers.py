@@ -249,8 +249,6 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         # TODO: Check if our method can also be expressed as a weighted least squares (see hastie: p. 121)
         # TODO: might be a bit faster.
         w = np.zeros(X.shape[1])  # Hastie says zero is a good starting point
-        # TODO: I used the difference in w as a way to evaluate convergence. The best would be to compute the loss
-        # TODO: function, but I suspect that it would be more computationally intensive. Check if what I did is ok.
         iterations = 0
         while iterations < self.opti_max_iter:
             p = np.exp(np.dot(X, w))
