@@ -251,8 +251,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         w = np.zeros(X.shape[1])  # Hastie says zero is a good starting point
         iterations = 0
         while iterations < self.opti_max_iter:
-            p = np.exp(np.dot(X, w))
-            p /= (1 + p)
+            p = 1.0 / (1.0 + np.exp(-np.dot(X, w)))
             gradient = np.dot(X.T, y - p) - 2 * self.alpha * w - 4 * self.beta * np.dot(OLO, w)
 
             W = np.diag(p * (1.0 - p))
