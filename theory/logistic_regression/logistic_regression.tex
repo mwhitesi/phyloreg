@@ -1,0 +1,81 @@
+\documentclass[14 pt]{article}
+\usepackage[paper=a4paper,top=1in,bottom=1in,right=1in,left=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{bm}
+
+
+\title{Logistic regression with phylogenetic regularization}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+We are provided with $s$ ( extant and ancestral )species that are related through a phylogenetic tree. The point of interest is human species genomic sequences, which could be (un)bound by a transcription factor $T$ in question. The goal is to come up with a machine learning model that could exploit the phylogenetic tree in order to predict whether the given human genomic sequence is bound by $T$ or not. We would like to build our model based on logistic regression method regularized by $||\ell_2||$ norm and the phylogenetic tree. 
+
+Suppose there are $n$ training examples and $m$ features (including the bias term) associated with each example. The matrices $\bm{X}^{n\times m}$, $\bm{y}^{n\times 1}$ and $\bm{O}^{v\times m}$ represent human training examples, associated labels and all the orthologues (including human ) examples, where $v$ is $n\times s$ and $y_i$ = 1 or 0 denotes that the $i$th example is bound or unbound by $T$.
+
+Let $\bm{\beta}^{m\times 1}$ be logistic regression parameter and $p( \bm{x}_i, \bm{\beta})$ be the probability that the $i$th example is labeled as 1. Then, the logistic regression model states that,
+
+\begin{eqnarray}
+  \log \frac{p( \bm{x}_i, \bm{\beta})}{1-p( \bm{x}_i, \bm{\beta})} &= \bm{\beta}^T \cdot \bm{x}_i \\
+  p( \bm{x}_i, \bm{\beta}) &= \frac{1}{ 1 + \exp( -\bm{\beta}^T \cdot \bm{x}_i )}
+\end{eqnarray}
+
+The likelihood of data, $\ell(\cdot)$ with the probabilities $p^{n\times 1}$ ( where $p_i$ = $p( \bm{x}_i, \bm{\beta})$) is,
+
+\begin{eqnarray}
+	\ell(\bm{\beta}) = \prod_{i=1}^{n} p_i \\
+	\ell(\bm{\beta}) = \sum_{i=1}^n \log p_i\\
+	\ell(\bm{\beta}) = \sum_{i=1}^{n} ( y_i \log p_i + (1-y_i) \log( 1- p_i ) )
+\end{eqnarray}
+
+With regularization terms, the likelihood becomes,
+
+\begin{eqnarray}
+	\ell(\bm{\beta}) = \sum_{i=1}^{n} ( y_i \log p_i + (1-y_i) \log( 1- p_i ) ) - \lambda || \bm{\beta} ||^2 - \gamma \sum_{j = 1}^{v} \sum_{k = 1}^{v} N_{ij} ( \bm{\beta}^T \cdot O_i - \bm{\beta}^T \cdot O_j )^2
+\end{eqnarray}
+
+where $N_{ij}$ is the proximity between $i$th and $j$th orthologue.\\\\
+
+Now, taking gradient of three terms w.r.t. $\beta$,
+
+\begin{eqnarray}
+	\frac{\delta T_1}{\delta \bm{\beta} } 
+	&= \sum_{i=1}^n \biggl( y_i \bm{\beta}^T x_i - \log ( 1 + \exp ( \bm{\beta}^T\cdot x_i )) \biggl) \\
+	&= \sum_{i=1}^n  x_i ( y_i - p_i ) \\
+	&= \bm{X}^T ( \bm{y} - \bm{p})
+\end{eqnarray}
+
+\begin{equation}
+	\frac{\delta T_2}{\delta \bm{\beta} } = 2 \lambda  \bm{\beta}
+\end{equation}
+
+\begin{eqnarray}
+	\frac{ \delta T_3 } { \delta \bm{\beta}} &= \gamma \frac {\delta}{\delta \bm{\beta}} (\sum_{j = 1}^{v} \sum_{k = 1}^{v} N_{ij} ( \beta^T \cdot O_i - \beta^T \cdot O_j )^2 ) \\
+	&= \gamma \frac {\delta}{\delta \bm{\beta}} \biggl(  2 \beta^T O^T L O \beta \biggl) \\
+	&= \gamma 4 O^T L O \beta
+\end{eqnarray}
+
+where $\bm{L}$ is the laplacian matrix of $\bm{O}$
+  
+  \begin{equation}  
+  \frac{\delta \ell ( \bm{\beta})}{\delta \bm{\beta}} = \bm{x}^T ( \bm{y} - \bm{p}) - 2 \lambda  \bm{\beta} - \gamma 4 \bm{O}^T \bm{L} \bm{O} \bm{\beta}
+  \end{equation}
+  
+  The Hessian matrix,
+  
+  \begin{equation}
+	  \frac{\delta^2 \ell (\beta)}{\delta \beta^2} = -\bm{X}^T \bm{W} \bm{X} - 2 \lambda  \bm{I} - \gamma 4 \bm{O}^T \bm{L} \bm{O}\bm{I} 
+  \end{equation}
+  
+  The newton-raphson method,
+  
+  \begin{equation}
+	  \bm{\beta}^\text{new} = \bm{\beta}^\text{old} - \bigg( \frac{\delta^2 \ell (\beta)}{\delta \beta^2} \bigg)^{-1} \frac{\delta \ell (\beta)}{\delta \beta} 
+  \end{equation}
+
+
+\end{document}
