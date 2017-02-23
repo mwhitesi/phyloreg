@@ -3,6 +3,7 @@
 
 """
 import h5py as h
+import logging
 import numpy as np
 
 from sklearn.base import BaseEstimator, ClassifierMixin
@@ -170,16 +171,23 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         The fitted model's coefficients (last value is the intercept if fit_intercept=True).
 
     """
-    def __init__(self, alpha=1.0, beta=1.0, normalize_laplacian=False, fit_intercept=False, opti_max_iter=1e3,
-                 opti_tol=1e-9):
+    def __init__(self, alpha=1.0, beta=0.0, normalize_laplacian=False, fit_intercept=False, opti_max_iter=1e5,
+                 opti_tol=1e-7, opti_learning_rate=1e-2, opti_learning_rate_decrease=1e-4, random_seed=42):
+        # Classifier parameters
         self.alpha = float(alpha)
         self.beta = float(beta)
         self.normalize_laplacian = normalize_laplacian
         self.fit_intercept = fit_intercept
         self.w = None
         self.intercept = 0
+
+        # Optimisation algorithm parameters
         self.opti_tol = opti_tol
         self.opti_max_iter = opti_max_iter
+        self.opti_learning_rate = opti_learning_rate
+        self.opti_learning_rate_decrease = opti_learning_rate_decrease
+        self.opti_lookahead_steps = 50
+        self.random_seed = random_seed
 
     def fit(self, X, X_species, y, orthologs, species_graph_adjacency, species_graph_names):
         """Fit the model
@@ -216,11 +224,48 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         (see: http://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.StandardScaler.html).
 
         """
+        def objective(w):
+            """
+            The function that we want to maximize
+            """
+            o = 0.0
+
+            # Likelihood
+            for i in xrange(X.shape[0]):
+                pi = 1.0 / (1.0 + np.exp(-np.dot(w, X[i])))
+                o += np.log(pi) if y[i] == 1 else np.log(1.0 - pi)
+            o /= X.shape[0]
+
+            # L2 norm
+            o -= self.alpha * np.linalg.norm(w, ord=2)**2
+
+            # Manifold (computed for each example x_i)
+            for i, x_i in enumerate(X):
+                # H5py doesn't support integer keys
+                if isinstance(orthologs, h.File):
+                    i = str(i)
+
+                if len(orthologs[i]["species"]) > 0:
+                    # Load the orthologs of X and create a matrix that also contains x
+                    x_orthologs_species = [idx_by_species[s] for s in orthologs[i]["species"]]
+                    x_orthologs_feats = orthologs[i]["X"]
+                    if self.fit_intercept:
+                        x_orthologs_feats = np.hstack((x_orthologs_feats, np.ones(x_orthologs_feats.shape[0]).reshape(-1, 1)))  # Add this bias term
+
+                    O_i = np.zeros((len(species_graph_names), x_orthologs_feats.shape[1]))
+                    O_i[x_orthologs_species] = x_orthologs_feats
+                    O_i[idx_by_species[X_species[i]]] = x_i
+
+                    f = np.dot(O_i, w)
+                    o -= self.beta * 2.0 * np.dot(np.dot(f.T, L), f) / (X.shape[0] * L.shape[0]**2)
+            return o
+
         # Create a mapping between species names and indices in the graph adjacency matrix
         idx_by_species = dict(zip(species_graph_names, range(len(species_graph_names))))
 
+        # If required, add a feature for each example that serves as bias
         if self.fit_intercept:
-            X = np.hstack((X, np.ones(X.shape[0]).reshape(-1, 1)))  # Add a feature for each example that serves as bias
+            X = np.hstack((X, np.ones(X.shape[0]).reshape(-1, 1)))
 
         # Compute the O^t x L x O product, where L is the block diagonal graph laplacian matrix
         L = graph_laplacian(species_graph_adjacency, normed=self.normalize_laplacian)
@@ -244,32 +289,75 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
                 # Compute the efficient product and add it to the nasty product
                 OLO += np.dot(np.dot(O_i.T, L), O_i)
 
-        # Newton-Raphson method
-        # TODO: Can we use iterative reweighted least squares? I'm pretty sure we can.
-        # TODO: Check if our method can also be expressed as a weighted least squares (see hastie: p. 121)
-        # TODO: might be a bit faster.
-        w = np.zeros(X.shape[1])  # Hastie says zero is a good starting point
+        logging.debug("Initiating gradient ascent")
+
+        # Initialize parameters
+        random_generator = np.random.RandomState(self.random_seed)
+        w = random_generator.rand(X.shape[1])
+
+        # Initialize lookahead
+        lookahead_optimum = objective(w)
+        lookahead_w = w
+        lookahead_count = 0
+
+        # Ascend that gradient!
         iterations = 0
+        objective_val = lookahead_optimum
         while iterations < self.opti_max_iter:
+            learning_rate = self.opti_learning_rate / (1.0 + self.opti_learning_rate_decrease * iterations)
+            logging.debug("Iteration %d -- Objective: %.6f -- Learning rate: %.6f" % (iterations, objective_val, learning_rate))
+
             p = 1.0 / (1.0 + np.exp(-np.dot(X, w)))
-            gradient = np.dot(X.T, y - p) - 2 * self.alpha * w - 4 * self.beta * np.dot(OLO, w)
+            gradient = np.dot(X.T, y - p) / X.shape[0] - 2.0 * self.alpha * w - 4.0 * self.beta * np.dot(OLO, w) / (X.shape[0] * L.shape[0]**2)
 
-            W = np.diag(p * (1.0 - p))
-            subgradient = -np.dot(np.dot(X.T, W), X) - 2 * self.alpha * np.eye(X.shape[1]) - 4 * self.beta * OLO
-
-            update = np.dot(np.linalg.inv(subgradient), gradient)
-            w -= update
+            update = learning_rate * gradient
+            w += update
             iterations += 1
 
-            # Check for convergence
-            if np.linalg.norm(update, ord=2) <= self.opti_tol:
-                break
+            # Verify progress after each iteration
+            objective_val = objective(w)
 
+            # If we find a solution that is very close to the optimum register a "no change"
+            if np.abs(objective_val - lookahead_optimum) <= self.opti_tol:
+                lookahead_count += 1
+            else:
+                # Otherwise, update the current value
+                lookahead_optimum = objective_val
+                lookahead_w = w.copy()
+
+            # Check for convergence (objective value has not significantly changed during lookahead)
+            if lookahead_count >= self.opti_lookahead_steps:
+                logging.debug("Converged in %d iterations" % (iterations - lookahead_count))
+                w = lookahead_w
+                break
         else:  # Executed if the loop ends after its condition is violated (not on break)
+            logging.debug("The maximum number of iterations was reached prior to convergence. Try increasing the number"
+                          " of iterations.")
             warn("The maximum number of iterations was reached prior to convergence. Try increasing the number of "
                  "iterations.")
 
         self.w = w
+
+        # # Newton-Raphson method
+        # # TODO: Can we use iterative reweighted least squares? I'm pretty sure we can.
+        # # TODO: Check if our method can also be expressed as a weighted least squares (see hastie: p. 121)
+        # # TODO: might be a bit faster.
+        # w = np.zeros(X.shape[1])  # Hastie says zero is a good starting point
+        # iterations = 0
+        # while iterations < self.opti_max_iter:
+        #     p = 1.0 / (1.0 + np.exp(-np.dot(X, w)))
+        #     gradient = np.dot(X.T, y - p) - 2 * self.alpha * w - 4 * self.beta * np.dot(OLO, w)
+        #
+        #     W = np.diag(p * (1.0 - p))
+        #     subgradient = -np.dot(np.dot(X.T, W), X) - 2 * self.alpha * np.eye(X.shape[1]) - 4 * self.beta * OLO
+        #
+        #     update = np.dot(np.linalg.inv(subgradient), gradient)
+        #     w -= update
+        #     iterations += 1
+        #
+        #     # Check for convergence
+        #     if np.linalg.norm(update, ord=2) <= self.opti_tol:
+        #         break
 
     def predict(self, X):
         """Compute predictions using the learned model
@@ -293,9 +381,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             X = np.hstack((X, np.ones(X.shape[0]).reshape(-1, 1)))  # Add a feature for each example that serves as bias
         if self.w is None:
             raise RuntimeError("The algorithm must be fitted first!")
-        p = np.exp(np.dot(X, self.w).reshape(-1,))
-        p /= (1 + p)
-        return p
+        return 1.0 / (1.0 + np.exp(-np.dot(X, self.w).reshape(-1,)))
 
     def _check_likelihood_gradient(self):
         print "Gradient verification for the log likelihood term...",
@@ -309,14 +395,15 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         w = np.random.rand(n_features)
 
         # Compute the gradient according to the expression
-        gradient = np.dot(X.T, y - 1.0 / (1.0 + np.exp(-np.dot(X, w))))
+        gradient = np.dot(X.T, y - 1.0 / (1.0 + np.exp(-np.dot(X, w)))) / X.shape[0]
 
         # Compute the empirical gradient estimate
         def loss(w):
             l = 0.0
             for i in xrange(X.shape[0]):
                 pi = 1.0 / (1.0 + np.exp(-np.dot(w, X[i])))
-                l += (y[i] * np.log(pi)) + (1 - y[i]) * np.log(1.0 - pi)
+                l += np.log(pi) if y[i] == 1 else np.log(1.0 - pi)
+            l /= X.shape[0]
             return l
 
         # Check the gradient for each component of w
@@ -380,7 +467,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
 
         # Compute the gradient according to the expression
         OLO = np.dot(np.dot(O.T, L), O)
-        gradient = 4 * beta * np.dot(OLO, w)
+        gradient = 4 * beta * np.dot(OLO, w) / (n_examples * L.shape[0]**2)
 
         # Compute the empirical gradient estimate
         def loss(w):
@@ -388,16 +475,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             for i in xrange(O.shape[0]):
                 for j in xrange(O.shape[0]):
                     l += A[i, j] * (np.dot(w, O[i]) - np.dot(w, O[j]))**2
-            return beta * l
-
-        def loss1(w):
-            """
-            Notes:
-                * This is the rewriting proposed by Belkin. I suspect its equal to half of the double loop version
-                  because it doesn't consider the pairs twice.
-            """
-            f = np.dot(O, w)
-            l = np.dot(np.dot(f.T, L), f)
+            l /= (n_examples * L.shape[0]**2)
             return beta * l
 
         # Check the gradient for each component of w
