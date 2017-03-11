@@ -403,7 +403,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
                  "iterations.")
 
         pool.close()  # Close parallel pool
-        del pool
+	#del pool
 
         self.w = w
 
