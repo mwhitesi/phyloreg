@@ -216,7 +216,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         The fitted model's coefficients (last value is the intercept if fit_intercept=True).
 
     """
-    def __init__(self, alpha=1.0, beta=0.0, normalize_laplacian=False, fit_intercept=False, opti_max_iter=10,
+    def __init__(self, alpha=1.0, beta=0.0, normalize_laplacian=False, fit_intercept=False, opti_max_iter=1e4,
                  opti_tol=1e-7, opti_learning_rate=1e-2, opti_learning_rate_decrease=1e-4, random_seed=42,
                  n_cpu=-1):
         # Classifier parameters
@@ -380,7 +380,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             logging.debug( 'w: %s', w )
             logging.debug("Iteration %d -- Objective: %.6f -- Learning rate: %.6f" % (iterations, objective_val, learning_rate))
             logging.debug('Alpha: %s', self.alpha )
-            # exit()
+            exit()
 
             p = 1.0 / (1.0 + np.exp(-np.dot(X, w)))
             gradient_t1_t2 = np.dot(X.T, y - p) / X.shape[0] - 2.0 * self.alpha * w
@@ -437,22 +437,22 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         # print 'o1: ', self.o1list
         # print 'o2: ', self.o2list
         # print 'o3: ', self.o3list
-        #
-        # fig = plt.figure()
-        #
-        # ax1 = fig.add_subplot(311)
-        # ax1.set_ylim([ min(self.o1list), max( self.o1list)])
-        # ax1.plot( range(iterations + 1 ), np.asarray( self.o1list, dtype= float), 'r-')
-        #
-        # ax2 = fig.add_subplot(312)
-        # ax2.set_ylim([ min(self.o2list), max( self.o2list)])
-        # ax2.plot( range(iterations + 1), np.asarray( self.o2list, dtype= float), 'r-')
-        #
-        # ax3 = fig.add_subplot(313)
-        # ax3.set_ylim([ min(self.o3list), max( self.o3list)])
-        # ax3.plot( range(iterations + 1), np.asarray( self.o3list, dtype= float), 'r-')
-        #
-        # plt.savefig( 'alpha' + str( self.alpha ) + 'beta' + str( self.beta) + '.pdf' )
+
+        fig = plt.figure()
+
+        ax1 = fig.add_subplot(311)
+        ax1.set_ylim([ min(self.o1list), max( self.o1list)])
+        ax1.plot( range(iterations + 1 ), np.asarray( self.o1list, dtype= float), 'r-')
+
+        ax2 = fig.add_subplot(312)
+        ax2.set_ylim([ min(self.o2list), max( self.o2list)])
+        ax2.plot( range(iterations + 1), np.asarray( self.o2list, dtype= float), 'r-')
+
+        ax3 = fig.add_subplot(313)
+        ax3.set_ylim([ min(self.o3list), max( self.o3list)])
+        ax3.plot( range(iterations + 1), np.asarray( self.o3list, dtype= float), 'r-')
+
+        plt.savefig( 'alpha' + str( self.alpha ) + 'beta' + str( self.beta) + '.pdf' )
 
 
 

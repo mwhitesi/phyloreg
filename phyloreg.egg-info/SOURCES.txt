@@ -1,0 +1,8 @@
+setup.py
+phyloreg/__init__.py
+phyloreg/classifiers.py
+phyloreg/species.py
+phyloreg.egg-info/PKG-INFO
+phyloreg.egg-info/SOURCES.txt
+phyloreg.egg-info/dependency_links.txt
+phyloreg.egg-info/top_level.txt
