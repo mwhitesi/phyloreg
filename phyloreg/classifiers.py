@@ -367,10 +367,13 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
                 pool.join()
                 del pool
 
+	    gradient_t3 /= X.shape[0] * (len(species_graph_names))**2
 
-            gradient = gradient_t1_t2 - gradient_t3
+            gradient = gradient_t1_t2 - gradient_t3 
             logging.debug( 'gradient: %s', gradient)
             logging.debug( 'p: %s',  p)
+
+	    logging.debug( 'w norm: %s, gt1t2norm: %s, gt3norm: %s, gnorm: %s', np.linalg.norm(w), np.linalg.norm(gradient_t1_t2), np.linalg.norm(gradient_t3), np.linalg.norm(gradient) ) 
 
             # if iterations == 2:
             #     exit()
@@ -402,7 +405,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             warn("The maximum number of iterations was reached prior to convergence. Try increasing the number of "
                  "iterations.")
 
-        pool.close()  # Close parallel pool
+	#pool.close()  # Close parallel pool
 	#del pool
 
         self.w = w
