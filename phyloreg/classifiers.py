@@ -161,7 +161,8 @@ def parallel_gradient_by_w_coefficient(t, ortholog_matrix_by_example, w, species
         p = 1.0 / (1.0 + np.exp(-np.dot(O_i, w)))
         top = np.exp(-np.dot(O_i, w))
         gradient += sum(species_graph_adjacency[k, l] * (p_k - p_l) * (p_k**2 * top_k * O_i_k[t] - p_l**2 * top_l * O_i_l[t]) for k, (O_i_k, p_k, top_k) in enumerate(izip(O_i, top, p)) for l, (O_i_l, p_l, top_l) in enumerate(izip(O_i, top, p)) if k < l)
-    return t, 4.0 * gradient
+    #return t, 4.0 * gradient
+    return 4.0 * gradient
 
 class LogisticRegression(BaseEstimator, ClassifierMixin):
     """Logistic regression species-level with phylogenetic regularization
@@ -283,14 +284,19 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             o3 = 0.0
 
             if self.beta > 0:
-                func = partial(parallel_objective_by_example, w=w, species_graph_adjacency=species_graph_adjacency)
-                pool = Pool(self.n_cpu)
-                for v in pool.imap_unordered(func, ortholog_matrix_by_example):
-                    o3 += v
-                pool.close()
-                pool.join()
-                del pool
-                o3 *= self.beta
+#                func = partial(parallel_objective_by_example, w=w, species_graph_adjacency=species_graph_adjacency)
+#                pool = Pool(self.n_cpu)
+#                for v in pool.imap_unordered(func, ortholog_matrix_by_example):
+#                    o3 += v
+#                pool.close()
+#                pool.join()
+#                del pool
+#                o3 *= self.beta
+
+	    	for v in ortholog_matrix_by_example:
+			o3 += parallel_objective_by_example( v, w, species_graph_adjacency)
+
+	    o3 *= self.beta / ( X.shape[0] * len( species_graph_names )**2 )
 
             o = o1 - o2 - o3
 
@@ -358,14 +364,17 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
 
             gradient_t3 = np.zeros(X.shape[1])
             if self.beta > 0.0:
-                pool = Pool(self.n_cpu)  # Initialize parallel pool
-                func = partial(parallel_gradient_by_w_coefficient, ortholog_matrix_by_example=ortholog_matrix_by_example, w=w,
-                               species_graph_adjacency=species_graph_adjacency)
-                for t, g in pool.imap_unordered(func, range(len(w))):
-                    gradient_t3[t] = self.beta * g
-                pool.close()
-                pool.join()
-                del pool
+#                pool = Pool(self.n_cpu)  # Initialize parallel pool
+#                func = partial(parallel_gradient_by_w_coefficient, ortholog_matrix_by_example=ortholog_matrix_by_example, w=w,
+#                               species_graph_adjacency=species_graph_adjacency)
+#                for t, g in pool.imap_unordered(func, range(len(w))):
+#                    gradient_t3[t] = self.beta * g
+#                pool.close()
+#                pool.join()
+#                del pool
+
+	    	 for t in range( len(w) ):
+		    gradient_t3[t] = self.beta * parallel_gradient_by_w_coefficient( t, ortholog_matrix_by_example, w, species_graph_adjacency )
 
 	    gradient_t3 /= X.shape[0] * (len(species_graph_names))**2
 
