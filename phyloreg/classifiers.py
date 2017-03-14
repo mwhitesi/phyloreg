@@ -155,15 +155,6 @@ def parallel_objective_by_example(O_i, w, species_graph_adjacency):
     return 2.0 * sum(species_graph_adjacency[k, l] * (p[k] - p[l])**2 for k in xrange(O_i.shape[0]) for l in xrange(k))
 
 
-def parallel_gradient_by_w_coefficient(t, ortholog_matrix_by_example, w, species_graph_adjacency):
-    gradient = 0.0
-    for O_i in ortholog_matrix_by_example:
-        p = 1.0 / (1.0 + np.exp(-np.dot(O_i, w)))
-        top = np.exp(-np.dot(O_i, w))
-        gradient += sum(species_graph_adjacency[k, l] * (p_k - p_l) * (p_k**2 * top_k * O_i_k[t] - p_l**2 * top_l * O_i_l[t]) for k, (O_i_k, p_k, top_k) in enumerate(izip(O_i, top, p)) for l, (O_i_l, p_l, top_l) in enumerate(izip(O_i, top, p)) if k < l)
-    #return t, 4.0 * gradient
-    return 4.0 * gradient
-
 class LogisticRegression(BaseEstimator, ClassifierMixin):
     """Logistic regression species-level with phylogenetic regularization
 
@@ -350,11 +341,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
                 O_i = ortholog_matrix_by_example[iteration_example_idx]
                 for t in range(len(w)):
                     p = 1.0 / (1.0 + np.exp(-np.dot(O_i, w)))
-                    #print "PMAX:", p.max()
-                    #print "DOTMAX:", np.dot(O_i, w).max(), np.dot(O_i, w).min()
                     top = np.exp(-np.dot(O_i, w))
-                    #print "TOPMAX:", top.max()
-                    top[np.isinf(top)] = 99999999
                     gradient_t3[t] = sum(species_graph_adjacency[k, l] * (p_k - p_l) * (
                     p_k ** 2 * top_k * O_i_k[t] - p_l ** 2 * top_l * O_i_l[t]) for k, (O_i_k, p_k, top_k) in
                                     enumerate(izip(O_i, top, p)) for l, (O_i_l, p_l, top_l) in
