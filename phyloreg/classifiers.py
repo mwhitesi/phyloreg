@@ -259,53 +259,29 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             """
             The function that we want to maximize
             """
-            o = 0.0
-
-
             # Likelihood
+            o1 = 0.0
             for i in xrange(X.shape[0]):
                 pi = 1.0 / (1.0 + np.exp(-np.dot(w, X[i])))
-
-                pi = max( pi, 1e-6 )
-                pi = min( 0.999999, pi )
-
-                # logging.debug('i: %s    pi: %s', i, pi)
-
-                o += np.log(pi) if y[i] == 1 else np.log(1.0 - pi)
-                # logging.debug('i: %s    pi: %s', i, pi)
-
-            o /= X.shape[0]
-
-            o1 = o
+                o1 += np.log(pi) if y[i] == 1 else np.log(1.0 - pi)
+                print "pi   ", pi,   "log(pi):", np.log(pi)
+            o1 /= X.shape[0]
 
             # L2 norm
             o2 = self.alpha * np.linalg.norm(w, ord=2)**2
 
             o3 = 0.0
-
             if self.beta > 0:
-#                func = partial(parallel_objective_by_example, w=w, species_graph_adjacency=species_graph_adjacency)
-#                pool = Pool(self.n_cpu)
-#                for v in pool.imap_unordered(func, ortholog_matrix_by_example):
-#                    o3 += v
-#                pool.close()
-#                pool.join()
-#                del pool
-#                o3 *= self.beta
-
-	    	for v in ortholog_matrix_by_example:
-			o3 += parallel_objective_by_example( v, w, species_graph_adjacency)
-
-	    o3 *= self.beta / ( X.shape[0] * len( species_graph_names )**2 )
-
+                for v in ortholog_matrix_by_example:
+                    o3 += parallel_objective_by_example(v, w, species_graph_adjacency)
+                o3 *= self.beta / (X.shape[0] * len(species_graph_names)**2)
             o = o1 - o2 - o3
 
-            logging.debug( ' \n o1: %s \n o2: %s \n o3: %s \n o: %s', o1, o2, o3, o )
-            # print( ' \n o1: \n o2:  \n o3:  \n o: %s', o1, o2, o3, o )
+            logging.debug(' \n o1: %s \n o2: %s \n o3: %s \n o: %s', o1, o2, o3, o)
 
-            self.o1list.append( o1)
-            self.o2list.append( o2)
-            self.o3list.append( o3)
+            self.o1list.append(o1)
+            self.o2list.append(o2)
+            self.o3list.append(o3)
 
             return o
 
@@ -340,7 +316,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         logging.debug("Initiating gradient ascent")
 
         # Initialize parameters
-        # random_generator = np.random.RandomState(self.random_seed)
+        random_generator = np.random.RandomState(self.random_seed)
         w = np.zeros( X.shape[1]) #random_generator.rand(X.shape[1])
 
         # Initialize lookahead
@@ -351,41 +327,46 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         # Ascend that gradient!
         iterations = 0
         objective_val = lookahead_optimum
+        shuffled_example_idx = np.arange(X.shape[0])
+        random_generator.shuffle(shuffled_example_idx)
         while iterations < self.opti_max_iter:
+            # The example considered by SGD
+            iteration_example_idx = shuffled_example_idx[iterations % X.shape[0]]
+
             learning_rate = self.opti_learning_rate / (1.0 + self.opti_learning_rate_decrease * iterations)
             logging.debug( 'w: %s', w )
-            logging.debug("Iteration %d -- Objective: %.6f -- Learning rate: %.6f" % (iterations, objective_val, learning_rate))
+            logging.debug("Iteration %d -- Objective: %.6f -- Learning rate: %.6f -- Example idx: %d" % (iterations, objective_val, learning_rate, iteration_example_idx))
             logging.debug('Alpha: %s', self.alpha )
             # exit()
 
             logging.debug("Computing the gradient")
-            p = 1.0 / (1.0 + np.exp(-np.dot(X, w)))
-            gradient_t1_t2 = np.dot(X.T, y - p) / X.shape[0] - 2.0 * self.alpha * w
+            x_iteration = X[iteration_example_idx]
+            p = 1.0 / (1.0 + np.exp(-np.dot(x_iteration, w)))
+            gradient_t1 = np.dot(x_iteration, y[iteration_example_idx] - p)
+            gradient_t2 = 2.0 * self.alpha * w
 
             gradient_t3 = np.zeros(X.shape[1])
             if self.beta > 0.0:
-#                pool = Pool(self.n_cpu)  # Initialize parallel pool
-#                func = partial(parallel_gradient_by_w_coefficient, ortholog_matrix_by_example=ortholog_matrix_by_example, w=w,
-#                               species_graph_adjacency=species_graph_adjacency)
-#                for t, g in pool.imap_unordered(func, range(len(w))):
-#                    gradient_t3[t] = self.beta * g
-#                pool.close()
-#                pool.join()
-#                del pool
+                O_i = ortholog_matrix_by_example[iteration_example_idx]
+                for t in range(len(w)):
+                    p = 1.0 / (1.0 + np.exp(-np.dot(O_i, w)))
+                    #print "PMAX:", p.max()
+                    #print "DOTMAX:", np.dot(O_i, w).max(), np.dot(O_i, w).min()
+                    top = np.exp(-np.dot(O_i, w))
+                    #print "TOPMAX:", top.max()
+                    top[np.isinf(top)] = 99999999
+                    gradient_t3[t] = sum(species_graph_adjacency[k, l] * (p_k - p_l) * (
+                    p_k ** 2 * top_k * O_i_k[t] - p_l ** 2 * top_l * O_i_l[t]) for k, (O_i_k, p_k, top_k) in
+                                    enumerate(izip(O_i, top, p)) for l, (O_i_l, p_l, top_l) in
+                                    enumerate(izip(O_i, top, p)) if k < l)
+                gradient_t3 *= self.beta * 4
+                gradient_t3 /= (len(species_graph_names))**2
 
-	    	 for t in range( len(w) ):
-		    gradient_t3[t] = self.beta * parallel_gradient_by_w_coefficient( t, ortholog_matrix_by_example, w, species_graph_adjacency )
+            gradient = gradient_t1 - gradient_t2 - gradient_t3
+            logging.debug('gradient: %s', gradient)
+            logging.debug('p: %s',  p)
 
-	    gradient_t3 /= X.shape[0] * (len(species_graph_names))**2
-
-            gradient = gradient_t1_t2 - gradient_t3 
-            logging.debug( 'gradient: %s', gradient)
-            logging.debug( 'p: %s',  p)
-
-	    logging.debug( 'w norm: %s, gt1t2norm: %s, gt3norm: %s, gnorm: %s', np.linalg.norm(w), np.linalg.norm(gradient_t1_t2), np.linalg.norm(gradient_t3), np.linalg.norm(gradient) ) 
-
-            # if iterations == 2:
-            #     exit()
+            #logging.debug('w norm: %s, gt1t2norm: %s, gt3norm: %s, gnorm: %s', np.linalg.norm(w), np.linalg.norm(gradient_t1_t2), np.linalg.norm(gradient_t3), np.linalg.norm(gradient) )
 
             update = learning_rate * gradient
             w += update
@@ -413,9 +394,6 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
                           " of iterations.")
             warn("The maximum number of iterations was reached prior to convergence. Try increasing the number of "
                  "iterations.")
-
-	#pool.close()  # Close parallel pool
-	#del pool
 
         self.w = w
 

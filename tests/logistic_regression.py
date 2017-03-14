@@ -24,7 +24,7 @@ np.fill_diagonal(A, A.max())
 
 X, y = make_classification(n_samples=n_examples, n_features=n_features)
 
-clf = LogisticRegression(alpha=1e-3, beta=0.01, fit_intercept=True, opti_learning_rate=1e-1, opti_max_iter=1000, n_cpu=4)
+clf = LogisticRegression(alpha=0.0, beta=0.0, fit_intercept=True, opti_learning_rate=1e-1, opti_max_iter=1000, n_cpu=4)
 clf.fit(X=X,
         X_species=["a"] * n_examples,
         y=y,
