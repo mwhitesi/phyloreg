@@ -14,7 +14,30 @@ You should have received a copy of the GNU General Public License
 along with phyloreg.  If not, see <http://www.gnu.org/licenses/>.
 ---------------------------------------------------------------------
 """
-from setuptools import setup, find_packages
+from platform import system as get_os_name
+
+from setuptools import Extension, find_packages, setup
+from setuptools.command.build_ext import build_ext as _build_ext
+
+# Configure the compiler based on the OS
+if get_os_name().lower() == "darwin":
+    os_compile_flags = ["-mmacosx-version-min=10.9"]
+else:
+    os_compile_flags = []
+
+# Required for the automatic installation of numpy
+class build_ext(_build_ext):
+    def finalize_options(self):
+        _build_ext.finalize_options(self)
+        # Prevent numpy from thinking it is still in its setup process:
+        __builtins__.__NUMPY_SETUP__ = False
+        import numpy
+        self.include_dirs.append(numpy.get_include())
+
+gradient_module = Extension('phyloreg/gradients',
+                            sources=['cpp_extensions/gradients_python_bindings.cpp',
+                                     'cpp_extensions/gradients.cpp'],
+                            extra_compile_args=["-std=c++11"] + os_compile_flags)
 
 setup(
     name="phyloreg",
@@ -25,5 +48,8 @@ setup(
     license="GPL",
     keywords="",
     url="",
-    packages=find_packages(), requires=['numpy']
+    packages=find_packages(),
+    requires=['numpy'],
+    cmdclass={'build_ext':build_ext},
+    ext_modules=[gradient_module]
 )

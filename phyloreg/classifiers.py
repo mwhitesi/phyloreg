@@ -13,6 +13,9 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.graph import graph_laplacian
 from warnings import warn
 
+# C++ module
+from gradients import t3_gradient as t3_gradient_c
+
 import matplotlib.pyplot as plt
 
 
@@ -255,7 +258,6 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             for i in xrange(X.shape[0]):
                 pi = 1.0 / (1.0 + np.exp(-np.dot(w, X[i])))
                 o1 += np.log(pi) if y[i] == 1 else np.log(1.0 - pi)
-                print "pi   ", pi,   "log(pi):", np.log(pi)
             o1 /= X.shape[0]
 
             # L2 norm
@@ -338,16 +340,20 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
 
             gradient_t3 = np.zeros(X.shape[1])
             if self.beta > 0.0:
-                O_i = ortholog_matrix_by_example[iteration_example_idx]
-                for t in range(len(w)):
-                    p = 1.0 / (1.0 + np.exp(-np.dot(O_i, w)))
-                    top = np.exp(-np.dot(O_i, w))
-                    gradient_t3[t] = sum(species_graph_adjacency[k, l] * (p_k - p_l) * (
-                    p_k ** 2 * top_k * O_i_k[t] - p_l ** 2 * top_l * O_i_l[t]) for k, (O_i_k, p_k, top_k) in
-                                    enumerate(izip(O_i, top, p)) for l, (O_i_l, p_l, top_l) in
-                                    enumerate(izip(O_i, top, p)) if k < l)
-                gradient_t3 *= self.beta * 4
-                gradient_t3 /= (len(species_graph_names))**2
+                # O_i = ortholog_matrix_by_example[iteration_example_idx]
+                # for t in range(len(w)):
+                #     p = 1.0 / (1.0 + np.exp(-np.dot(O_i, w)))
+                #     top = np.exp(-np.dot(O_i, w))
+                #     gradient_t3[t] = sum(species_graph_adjacency[k, l] * (p_k - p_l) * (
+                #     p_k ** 2 * top_k * O_i_k[t] - p_l ** 2 * top_l * O_i_l[t]) for k, (O_i_k, p_k, top_k) in
+                #                     enumerate(izip(O_i, top, p)) for l, (O_i_l, p_l, top_l) in
+                #                     enumerate(izip(O_i, top, p)) if k < l)
+                # print gradient_t3
+                # gradient_t3 *= self.beta * 4
+                # gradient_t3 /= (len(species_graph_names))**2
+                gradient_t3 = self.beta * t3_gradient_c(species_graph_adjacency, ortholog_matrix_by_example[iteration_example_idx], w)
+            # print "COMPARISON: ", np.allclose(c_grad, gradient_t3), c_grad[0], gradient_t3[0]
+            # print "\n" * 5
 
             gradient = gradient_t1 - gradient_t2 - gradient_t3
             logging.debug('gradient: %s', gradient)
