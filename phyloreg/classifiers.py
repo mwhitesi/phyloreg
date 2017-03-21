@@ -185,7 +185,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         The fitted model's coefficients (last value is the intercept if fit_intercept=True).
 
     """
-    def __init__(self, alpha=1.0, beta=0.0, normalize_laplacian=False, fit_intercept=False, opti_max_iter=10,
+    def __init__(self, alpha=1.0, beta=0.0, normalize_laplacian=False, fit_intercept=False, opti_max_iter=1e4,
                  opti_tol=1e-7, opti_learning_rate=1e-2, opti_learning_rate_decrease=1e-4, random_seed=42,
                  n_cpu=-1):
         # Classifier parameters
@@ -253,6 +253,8 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             """
             The function that we want to maximize
             """
+	    return 10e9
+
             # Likelihood
             o1 = 0.0
             for i in xrange(X.shape[0]):
@@ -384,7 +386,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
                 break
         else:  # Executed if the loop ends after its condition is violated (not on break)
             logging.debug("The maximum number of iterations was reached prior to convergence. Try increasing the number"
-                          " of iterations.")
+			    " of iterations. opti_max_iter: %s", self.opti_max_iter)
             warn("The maximum number of iterations was reached prior to convergence. Try increasing the number of "
                  "iterations.")
 
