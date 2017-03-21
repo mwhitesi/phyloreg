@@ -34,10 +34,10 @@ class build_ext(_build_ext):
         import numpy
         self.include_dirs.append(numpy.get_include())
 
-gradient_module = Extension('phyloreg/gradients',
-                            sources=['cpp_extensions/gradients_python_bindings.cpp',
-                                     'cpp_extensions/gradients.cpp'],
-                            extra_compile_args=["-std=c++11"] + os_compile_flags)
+gradient_module = Extension('phyloreg/_phyloreg',
+                            sources=['cpp_extensions/phyloreg_python_bindings.cpp',
+                                     'cpp_extensions/logistic.cpp'],
+                            extra_compile_args=["-std=c++0x"] + os_compile_flags)
 
 setup(
     name="phyloreg",

@@ -14,7 +14,7 @@ from sklearn.utils.graph import graph_laplacian
 from warnings import warn
 
 # C++ module
-from gradients import t3_gradient as t3_gradient_c
+from _phyloreg import *
 
 import matplotlib.pyplot as plt
 
@@ -186,8 +186,8 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
 
     """
     def __init__(self, alpha=1.0, beta=0.0, normalize_laplacian=False, fit_intercept=False, opti_max_iter=1e4,
-                 opti_tol=1e-7, opti_learning_rate=1e-2, opti_learning_rate_decrease=1e-4, random_seed=42,
-                 n_cpu=-1):
+                 opti_lookahead_steps=50, opti_tol=1e-7, opti_learning_rate=1e-2, opti_learning_rate_decrease=1e-4,
+                 random_seed=42, n_cpu=-1):
         # Classifier parameters
         self.alpha = float(alpha)
         self.beta = float(beta)
@@ -201,7 +201,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         self.opti_max_iter = opti_max_iter
         self.opti_learning_rate = opti_learning_rate
         self.opti_learning_rate_decrease = opti_learning_rate_decrease
-        self.opti_lookahead_steps = 50
+        self.opti_lookahead_steps = opti_lookahead_steps
         self.random_seed = random_seed
         self.o1list = []
         self.o2list = []
@@ -243,53 +243,20 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         (see: http://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.StandardScaler.html).
 
         """
+        logging.debug("Preparing the data for the optimizer")
 
-
-        # logging.debug('Correct Program')
-        #
-        # exit()
-
-        def objective(w):
-            """
-            The function that we want to maximize
-            """
-	    return 10e9
-
-            # Likelihood
-            o1 = 0.0
-            for i in xrange(X.shape[0]):
-                pi = 1.0 / (1.0 + np.exp(-np.dot(w, X[i])))
-                o1 += np.log(pi) if y[i] == 1 else np.log(1.0 - pi)
-            o1 /= X.shape[0]
-
-            # L2 norm
-            o2 = self.alpha * np.linalg.norm(w, ord=2)**2
-
-            o3 = 0.0
-            if self.beta > 0:
-                for v in ortholog_matrix_by_example:
-                    o3 += parallel_objective_by_example(v, w, species_graph_adjacency)
-                o3 *= self.beta / (X.shape[0] * len(species_graph_names)**2)
-            o = o1 - o2 - o3
-
-            logging.debug(' \n o1: %s \n o2: %s \n o3: %s \n o: %s', o1, o2, o3, o)
-
-            self.o1list.append(o1)
-            self.o2list.append(o2)
-            self.o3list.append(o3)
-
-            return o
-
-        # Create a mapping between species names and indices in the graph adjacency matrix
-        idx_by_species = dict(zip(species_graph_names, range(len(species_graph_names))))
-
-        # logging.debug( 'species_graph_names: %s ', species_graph_names )
+        # Push the species adjacency matrix to the C++ module's memory
+        set_species_adjacency(species_graph_adjacency)
 
         # If required, add a feature for each example that serves as bias
         if self.fit_intercept:
             X = np.hstack((X, np.ones(X.shape[0]).reshape(-1, 1)))
 
+        # Push the examples and labels to the C++ module's memory
+        set_examples_and_labels(X, np.asarray(y, dtype=np.double))
+
         # Precompute the example ortholog feature matrices
+        idx_by_species = dict(zip(species_graph_names, range(len(species_graph_names))))
         ortholog_matrix_by_example = []
         for i, x_i in enumerate(X):
             # H5py doesn't support integer keys
@@ -305,23 +272,24 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             O_i = np.zeros((len(species_graph_names), len(x_i)))
             O_i[x_orthologs_species] = x_orthologs_feats
             O_i[idx_by_species[X_species[i]]] = x_i
-            ortholog_matrix_by_example.append(O_i)
+
+            # Push the orthologs to the C++ module's memory
+            set_example_orthologs(i, O_i)
 
 
-        logging.debug("Initiating gradient ascent")
+        logging.debug("Initiating the optimization procedure (gradient ascent)")
 
         # Initialize parameters
         random_generator = np.random.RandomState(self.random_seed)
         w = np.zeros( X.shape[1]) #random_generator.rand(X.shape[1])
 
         # Initialize lookahead
-        lookahead_optimum = objective(w)
-        lookahead_w = w
-        lookahead_count = 0
+        logging.debug("Computing the objective function")
+        objective_t1, objective_t2, objective_t3 = get_objective(w)
+        last_objective_checkpoint = objective_t1 - self.alpha * objective_t2 - self.beta * objective_t3
 
         # Ascend that gradient!
         iterations = 0
-        objective_val = lookahead_optimum
         shuffled_example_idx = np.arange(X.shape[0])
         random_generator.shuffle(shuffled_example_idx)
         while iterations < self.opti_max_iter:
@@ -329,61 +297,30 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             iteration_example_idx = shuffled_example_idx[iterations % X.shape[0]]
 
             learning_rate = self.opti_learning_rate / (1.0 + self.opti_learning_rate_decrease * iterations)
-            logging.debug( 'w: %s', w )
-            logging.debug("Iteration %d -- Objective: %.6f -- Learning rate: %.6f -- Example idx: %d" % (iterations, objective_val, learning_rate, iteration_example_idx))
-            logging.debug('Alpha: %s', self.alpha )
-            # exit()
+            logging.debug("Iteration %d -- Objective: %.6f -- Learning rate: %.6f -- Example idx: %d" % (iterations, last_objective_checkpoint, learning_rate, iteration_example_idx))
 
             logging.debug("Computing the gradient")
-            x_iteration = X[iteration_example_idx]
-            p = 1.0 / (1.0 + np.exp(-np.dot(x_iteration, w)))
-            gradient_t1 = np.dot(x_iteration, y[iteration_example_idx] - p)
-            gradient_t2 = 2.0 * self.alpha * w
-
-            gradient_t3 = np.zeros(X.shape[1])
-            if self.beta > 0.0:
-                # O_i = ortholog_matrix_by_example[iteration_example_idx]
-                # for t in range(len(w)):
-                #     p = 1.0 / (1.0 + np.exp(-np.dot(O_i, w)))
-                #     top = np.exp(-np.dot(O_i, w))
-                #     gradient_t3[t] = sum(species_graph_adjacency[k, l] * (p_k - p_l) * (
-                #     p_k ** 2 * top_k * O_i_k[t] - p_l ** 2 * top_l * O_i_l[t]) for k, (O_i_k, p_k, top_k) in
-                #                     enumerate(izip(O_i, top, p)) for l, (O_i_l, p_l, top_l) in
-                #                     enumerate(izip(O_i, top, p)) if k < l)
-                # print gradient_t3
-                # gradient_t3 *= self.beta * 4
-                # gradient_t3 /= (len(species_graph_names))**2
-                gradient_t3 = self.beta * t3_gradient_c(species_graph_adjacency, ortholog_matrix_by_example[iteration_example_idx], w)
-            # print "COMPARISON: ", np.allclose(c_grad, gradient_t3), c_grad[0], gradient_t3[0]
-            # print "\n" * 5
-
-            gradient = gradient_t1 - gradient_t2 - gradient_t3
-            logging.debug('gradient: %s', gradient)
-            logging.debug('p: %s',  p)
-
-            #logging.debug('w norm: %s, gt1t2norm: %s, gt3norm: %s, gnorm: %s', np.linalg.norm(w), np.linalg.norm(gradient_t1_t2), np.linalg.norm(gradient_t3), np.linalg.norm(gradient) )
+            gradient_t1, gradient_t2, gradient_t3 = get_gradient(w, iteration_example_idx)
+            gradient = gradient_t1 - self.alpha * gradient_t2 - self.beta * gradient_t3
 
             update = learning_rate * gradient
             w += update
             iterations += 1
 
-            # Verify progress after each iteration
-            logging.debug("Computing the objective function")
-            objective_val = objective(w)
+            # Verify progress after a certain number of iterations
+            if iterations % self.opti_lookahead_steps == 0:
+                logging.debug("Computing the objective function")
+                objective_t1, objective_t2, objective_t3 = get_objective(w)
+                objective_val = objective_t1 - self.alpha * objective_t2 - self.beta * objective_t3
 
-            # If we find a solution that is very close to the optimum register a "no change"
-            if np.abs(objective_val - lookahead_optimum) <= self.opti_tol:
-                lookahead_count += 1
-            else:
-                # Otherwise, update the current value
-                lookahead_optimum = objective_val
-                lookahead_w = w.copy()
+                # If there has been no change since the last objective check, stop.
+                if np.abs(objective_val - last_objective_checkpoint) <= self.opti_tol:
+                    logging.debug("Converged in %d iterations" % iterations)
+                    break
+                else:
+                    # Otherwise, update the current objective value
+                    last_objective_checkpoint = objective_val
 
-            # Check for convergence (objective value has not significantly changed during lookahead)
-            if lookahead_count >= self.opti_lookahead_steps:
-                logging.debug("Converged in %d iterations" % (iterations - lookahead_count))
-                w = lookahead_w
-                break
         else:  # Executed if the loop ends after its condition is violated (not on break)
             logging.debug("The maximum number of iterations was reached prior to convergence. Try increasing the number"
 			    " of iterations. opti_max_iter: %s", self.opti_max_iter)
