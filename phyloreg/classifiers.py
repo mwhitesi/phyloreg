@@ -328,6 +328,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
                  "iterations.")
 
         self.w = w
+        reset()
 
         # plot objective values
 

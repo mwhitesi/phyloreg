@@ -10,12 +10,13 @@
 
 
 double *example_features, *example_labels, *species_adjacency;
-bool examples_initialized = false;
-bool species_adjacency_initialized = false;
 std::unordered_map<int, double*> example_orthologs;
 int n_examples = -1;
 int n_features = -1;
 int n_species = -1;
+bool all_initialized = false;
+bool examples_initialized = false;
+bool species_adjacency_initialized = false;
 
 /***********************************************************************************************************************
  *                                              MODULE GLOBAL VARIABLES
@@ -77,6 +78,7 @@ set_examples_and_labels(PyObject *self, PyObject *args){
     example_labels = (double*)PyArray_DATA(PyArray_GETCONTIGUOUS(y));
     examples_initialized = true;
     n_examples = X_dim0;
+    all_initialized = false;
 
     return Py_None;
 }
@@ -128,6 +130,7 @@ set_orthologs(PyObject *self, PyObject *args){
 
     // Save the ortholog matrix for the example
     example_orthologs.insert(std::pair<int, double*>(example_idx, ortholog_features_data));
+    all_initialized = false;
 
     return Py_None;
 }
@@ -169,6 +172,27 @@ set_species_adjacency(PyObject *self, PyObject *args){
     // Access the array data
     species_adjacency = (double*)PyArray_DATA(PyArray_GETCONTIGUOUS(sa));
     species_adjacency_initialized = true;
+    all_initialized = false;
+
+    return Py_None;
+}
+
+static PyObject *
+reset(PyObject *self, PyObject *args){
+    PyArrayObject *sa; //borrowed
+
+    // Extract the argument values
+    if(!PyArg_ParseTuple(args, "", &PyArray_Type, &sa)){
+        return NULL;
+    }
+
+    example_orthologs.clear();
+    n_examples = -1;
+    n_features = -1;
+    n_species = -1;
+    all_initialized = false;
+    examples_initialized = false;
+    species_adjacency_initialized = false;
 
     return Py_None;
 }
@@ -182,16 +206,20 @@ static PyObject *
 get_gradient(PyObject *self, PyObject *args){
 
     // Check that we have the orthologs for all examples
-    bool all_orthologs_initialized = example_orthologs.size() == n_examples;
-    for(int i = 0; i < n_examples && all_orthologs_initialized; i++){
-        all_orthologs_initialized = all_orthologs_initialized && (example_orthologs.find(i) != example_orthologs.end());
-    }
+    if(!all_initialized){
+        bool all_orthologs_initialized = example_orthologs.size() == n_examples;
+        for (int i = 0; i < n_examples && all_orthologs_initialized; i++) {
+            all_orthologs_initialized =
+                    all_orthologs_initialized && (example_orthologs.find(i) != example_orthologs.end());
+        }
 
-    if(!all_orthologs_initialized || !examples_initialized || !species_adjacency_initialized){
-        PyErr_SetString(PyExc_TypeError,
-                        "Solver is not completely initialized. The example features, labels and orthologs must be set, "
-                                "as well as the species adjacency matrix.");
-        return NULL;
+        if (!all_orthologs_initialized || !examples_initialized || !species_adjacency_initialized) {
+            PyErr_SetString(PyExc_TypeError,
+                            "Solver is not completely initialized. The example features, labels and orthologs must be set, "
+                                    "as well as the species adjacency matrix.");
+            return NULL;
+        } else
+            all_initialized = true; // save this result for the next iterations (its long to compute)
     }
 
     int sgd_iteration_example;
@@ -327,6 +355,8 @@ static PyMethodDef Methods[] = {
                 "Defines the ortholog feature matrix of a learning example."},
         {"set_species_adjacency", set_species_adjacency, METH_VARARGS,
                 "Defines the species adjacency matrix."},
+        {"reset", reset, METH_VARARGS,
+                "Resets the solver."},
         {NULL, NULL, 0, NULL}
 };
 
