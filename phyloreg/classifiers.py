@@ -415,6 +415,103 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             raise RuntimeError("The algorithm must be fitted first!")
         return 1.0 / (1.0 + np.exp(-np.dot(X, self.w).reshape(-1,)))
 
+    def _check_sgd(self):
+        print "Gradient verification for the Stochastic Gradient Descent"
+        n_examples = 10
+        n_features = 5
+        epsilon = 1e-6
+        alpha = np.random.rand() * 100
+        beta = np.random.rand() * 100
+
+        # Initialization
+        X = np.random.randint(0, 2, (n_examples, n_features))
+        y = np.random.randint(0, 2, n_examples)
+        w = np.random.rand(n_features)
+
+        # Generate ortholog data
+
+
+
+        iteration_example_idx = 2
+        # Compute the gradient according to the SGD
+        gradient_t1, gradient_t2, gradient_t3 = get_gradient(w, iteration_example_idx)
+        gradient_t2 = self.alpha * gradient_t2
+        gradient_t3 = self.beta * gradient_t3
+
+        # Compute the empirical gradient estimate
+        # For the likelihood term
+        # Compute the empirical gradient estimate
+        def loss(w):
+            l = 0.0
+            i = iteration_example_idx
+            pi = 1.0 / (1.0 + np.exp(-np.dot(w, X[i])))
+            l += np.log(pi) if y[i] == 1 else np.log(1.0 - pi)
+            l /= X.shape[0]
+            return l
+
+        # Check the gradient for each component of w
+        for i in xrange(w.shape[0]):
+            w_1 = w.copy()
+            w_2 = w.copy()
+            w_1[i] += epsilon
+            w_2[i] -= epsilon
+            empirical_gradient = (loss(w_1) - loss(w_2)) / (2 * epsilon)
+            if not np.allclose(empirical_gradient, gradient_t1[i]):
+                print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_gradient, gradient_t1[i])
+                #return False
+        else:
+            print
+            "PASSED. likelihood term"
+            #return True
+
+        # For the l2 term
+        # Compute the empirical gradient estimate
+        w = np.random.rand(n_features)
+
+        def loss_l2(w):
+            return alpha * np.linalg.norm(w, ord=2) ** 2
+
+        # Check the gradient for each component of w
+        for i in xrange(w.shape[0]):
+            w_1 = w.copy()
+            w_2 = w.copy()
+            w_1[i] += epsilon
+            w_2[i] -= epsilon
+            empirical_gradient = (loss_l2(w_1) - loss_l2(w_2)) / (2 * epsilon)
+            if not np.allclose(empirical_gradient, gradient_t2[i]):
+                print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_gradient, gradient_t2[i])
+                # return False
+        else:
+            print "PASSED. l2 term"
+            # return True
+
+        # For the manifold term
+        w = np.random.rand(n_features)
+
+        def loss_phylo(w):
+            l = 0.0
+            i = iteration_example_idx
+            for j in xrange(O.shape[0]):
+                l += A[i, j] * (np.dot(w, O[i]) - np.dot(w, O[j])) ** 2
+            l /= (n_examples * L.shape[0] ** 2)
+            return beta * l
+
+        # Check the gradient for each component of w
+        for i in xrange(w.shape[0]):
+            w_1 = w.copy()
+            w_2 = w.copy()
+            w_1[i] += epsilon
+            w_2[i] -= epsilon
+            empirical_gradient = (loss_phylo(w_1) - loss_phylo(w_2)) / (2 * epsilon)
+            if not np.allclose(empirical_gradient, gradient_t3[i]):
+                print
+                "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_gradient, gradient_t3[i])
+                # return False
+        else:
+            print
+            "PASSED. phylo term"
+            # return True
+
     def _check_likelihood_gradient(self):
         print "Gradient verification for the log likelihood term...",
         n_examples = 10
