@@ -427,7 +427,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         beta = np.random.rand() * 100
 
         # Initialization
-        X = np.random.randint(0, 2, (n_examples, n_features))
+        X = np.random.rand(n_examples, n_features)
         y = np.random.randint(0, 2, n_examples)
         set_examples_and_labels(X, np.asarray(y, dtype=np.double))
 
@@ -442,7 +442,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
 
         # # Generate ortholog data
         for i, x_i in enumerate(X):
-            O_i = np.random.rand((n_species, len(x_i)))
+            O_i = np.random.rand(n_species, len(x_i))
             O_i[0] = x_i
             # Push the orthologs to the C++ module's memory
             set_example_orthologs(i, O_i)
@@ -485,11 +485,11 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             if not np.allclose(empirical_g1, g1[i]):
                 print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g1, g1[i])
             if not np.allclose(empirical_g2, g2[i]):
-                            print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g2, g2[i])
+                print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g2, g2[i])
             if not np.allclose(empirical_g3, g3[i]):
-                            print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g3, g3[i])
+                print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g3, g3[i])
             if not np.allclose(empirical_g4, g4[i]):
-                            print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g4, g4[i])
+                print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g4, g4[i])
         else:
             print "PASSED. "
             #return True
