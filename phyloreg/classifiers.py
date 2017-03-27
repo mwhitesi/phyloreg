@@ -484,12 +484,16 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
 
             if not np.allclose(empirical_g1, g1[i]):
                 print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g1, g1[i])
+                logging.debug('iteration: %s term1', i)
             if not np.allclose(empirical_g2, g2[i]):
                 print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g2, g2[i])
+                logging.debug('iteration: %s term2', i)
             if not np.allclose(empirical_g3, g3[i]):
                 print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g3, g3[i])
+                logging.debug('iteration: %s term3', i)
             if not np.allclose(empirical_g4, g4[i]):
                 print "FAILED. Expected gradient: %.8f   Calculated gradient: %.8f" % (empirical_g4, g4[i])
+                logging.debug('iteration: %s alltermscombined', i)
         else:
             print "PASSED. "
             #return True
