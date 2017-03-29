@@ -13,9 +13,9 @@ logging.basicConfig(level=logging.DEBUG,
                                 format="%(asctime)s.%(msecs)d %(levelname)s %(module)s: %(message)s")
 
 np.random.seed(1)
-n_examples = 500
-n_features = 4096
-n_orthologs = 200
+n_examples = 100
+n_features = 40
+n_orthologs = 20
 ortholog_names = [str(x) for x in np.random.randint(0, 1000000, n_orthologs)]
 
 A = np.random.rand(n_orthologs + 1, n_orthologs + 1)
@@ -24,7 +24,7 @@ np.fill_diagonal(A, A.max())
 
 X, y = make_classification(n_samples=n_examples, n_features=n_features)
 
-clf = LogisticRegression(alpha=0.0, beta=0.1, fit_intercept=True, opti_learning_rate=1e-1, opti_max_iter=100,
+clf = LogisticRegression(alpha=0.0, beta=0.1, fit_intercept=True, opti_learning_rate=1e-1, opti_max_iter=10000,
                          opti_lookahead_steps=20)
 clf.fit(X=X,
         X_species=["a"] * n_examples,

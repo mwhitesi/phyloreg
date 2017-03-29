@@ -3,51 +3,18 @@
 #include <iostream>
 #include "logistic.h"
 
-int t3_gradient(double *species_adjacency,
-                 double *ortholog_features,
-                 double *w,
-                 int n_species,
-                 int n_features,
-                 double *out_gradient){
-
-    // Compute p and top
-    double *p = new double[n_species];
-    double *top = new double[n_species];
-    for(int i = 0; i < n_species; i++){
-        double dot = 0.0;
-        for(int j = 0; j < n_features; j++){
-            dot += ortholog_features[i * n_features + j] * w[j];
-        }
-        top[i] = exp(-dot);
-        p[i] = 1.0 / (1.0 + top[i]);
-    }
-
-    // Compute the gradient of each feature
-    for(int t = 0; t < n_features; t++) {
-        for(int k = 0; k < n_species; k++){
-            for(int l = 0; l < n_species; l++){
-                if(k < l){
-                    out_gradient[t] += species_adjacency[k * n_species + l] * (p[k] - p[l]) * (p[k] * p[k] * top[k] * ortholog_features[k * n_features + t] - p[l] * p[l] * top[l] * ortholog_features[l * n_features + t]);
-                }
-            }
-        }
-        out_gradient[t] *= 4.0 / (n_species * n_species);
-    }
-
-    return 0;
-}
 
 inline double predict(double *w, double *X, int example_idx, int n_features, bool sigmoid){
     double dot = 0.0;
     for(int i = 0; i < n_features; i++){
         dot += X[example_idx * n_features + i] * w[i];
     }
+
     if(sigmoid)
         return 1.0 / (1.0 + exp(-dot));
     else
         return dot;
 }
-
 
 
 
@@ -64,7 +31,7 @@ int compute_sgd_gradient(double *X, double *y, int iteration_example_idx, double
     // Gradient of the likelihood term
     double c1 = y[iteration_example_idx] - predict(w, X, iteration_example_idx, n_features, true);
     for(int i = 0; i < n_features; i++){
-        out_likelihood_gradient[i] = X[iteration_example_idx * n_features + i] * c1 / n_examples;
+        out_likelihood_gradient[i] = X[iteration_example_idx * n_features + i] * c1;
     }
 
     // Gradient of the l2 norm term
@@ -87,7 +54,7 @@ int compute_sgd_gradient(double *X, double *y, int iteration_example_idx, double
                 }
             }
         }
-        out_phylo_gradient[t] *= 4.0 / (n_examples * n_species * n_species);
+        out_phylo_gradient[t] *= 4.0 / (n_species * n_species);
     }
 
     return 0;
@@ -141,8 +108,8 @@ int compute_objective(double *X,
                 out_phylo += 2.0 * species_adjacency[k * n_species + l] * (diff * diff);
             }
         }
-        out_phylo /= n_examples * n_species * n_species;
     }
+    out_phylo /= n_examples * n_species * n_species;
 
     return 0;
 }

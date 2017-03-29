@@ -34,7 +34,7 @@ class build_ext(_build_ext):
         import numpy
         self.include_dirs.append(numpy.get_include())
 
-gradient_module = Extension('phyloreg/_phyloreg',
+gradient_module = Extension('phyloreg._phyloreg',
                             sources=['cpp_extensions/phyloreg_python_bindings.cpp',
                                      'cpp_extensions/logistic.cpp'],
                             extra_compile_args=["-std=c++0x"] + os_compile_flags)
@@ -48,8 +48,13 @@ setup(
     license="GPL",
     keywords="",
     url="",
+
     packages=find_packages(),
     requires=['numpy'],
+
     cmdclass={'build_ext':build_ext},
-    ext_modules=[gradient_module]
+    ext_modules=[gradient_module],
+
+    test_suite='nose.collector',
+    tests_require=['nose']
 )

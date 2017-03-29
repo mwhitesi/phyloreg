@@ -80,7 +80,7 @@ set_examples_and_labels(PyObject *self, PyObject *args){
     n_examples = X_dim0;
     all_initialized = false;
 
-    return Py_None;
+    return Py_BuildValue("");
 }
 
 
@@ -132,7 +132,7 @@ set_orthologs(PyObject *self, PyObject *args){
     example_orthologs.insert(std::pair<int, double*>(example_idx, ortholog_features_data));
     all_initialized = false;
 
-    return Py_None;
+    return Py_BuildValue("");
 }
 
 static PyObject *
@@ -174,7 +174,7 @@ set_species_adjacency(PyObject *self, PyObject *args){
     species_adjacency_initialized = true;
     all_initialized = false;
 
-    return Py_None;
+    return Py_BuildValue("");
 }
 
 static PyObject *
@@ -194,7 +194,7 @@ reset(PyObject *self, PyObject *args){
     examples_initialized = false;
     species_adjacency_initialized = false;
 
-    return Py_None;
+    return Py_BuildValue("");
 }
 
 
