@@ -187,7 +187,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
     """
     def __init__(self, alpha=1.0, beta=0.0, normalize_laplacian=False, fit_intercept=False, opti_max_iter=1e4,
                  opti_lookahead_steps=50, opti_tol=1e-7, opti_learning_rate=1e-2, opti_learning_rate_decrease=1e-4,
-                 random_seed=42, n_cpu=-1):
+                 stop_on_nan_inf=True, random_seed=42, n_cpu=-1):
         # Classifier parameters
         self.alpha = float(alpha)
         self.beta = float(beta)
@@ -202,6 +202,7 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         self.opti_learning_rate = opti_learning_rate
         self.opti_learning_rate_decrease = opti_learning_rate_decrease
         self.opti_lookahead_steps = opti_lookahead_steps
+        self.stop_on_nan_inf = stop_on_nan_inf
         self.random_seed = random_seed
         self.o1list = []
         self.o2list = []
@@ -264,14 +265,15 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
                 i = str(i)
 
             # Load the orthologs of X and create a matrix that also contains x
-            x_orthologs_species = [idx_by_species[s] for s in orthologs[i]["species"]]
-            x_orthologs_feats = orthologs[i]["X"]
-            if self.fit_intercept:
-                x_orthologs_feats = np.hstack((x_orthologs_feats, np.ones(x_orthologs_feats.shape[0]).reshape(-1, 1)))  # Add this bias term
-
             O_i = np.zeros((len(species_graph_names), len(x_i)))
-            O_i[x_orthologs_species] = x_orthologs_feats
             O_i[idx_by_species[X_species[i]]] = x_i
+
+            x_orthologs_species = [idx_by_species[s] for s in orthologs[i]["species"]]
+            x_orthologs_feats = np.asarray(orthologs[i]["X"])
+            if len(x_orthologs_species) > 0:
+                if self.fit_intercept:
+                    x_orthologs_feats = np.hstack((x_orthologs_feats, np.ones(x_orthologs_feats.shape[0]).reshape(-1, 1)))  # Add this bias term
+                O_i[x_orthologs_species] = x_orthologs_feats
 
             # Push the orthologs to the C++ module's memory
             set_example_orthologs(i, O_i)
@@ -302,6 +304,12 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
             logging.debug("Computing the gradient")
             gradient_t1, gradient_t2, gradient_t3 = get_gradient(w, iteration_example_idx)
             gradient = gradient_t1 - self.alpha * gradient_t2 - self.beta * gradient_t3
+
+            if self.stop_on_nan_inf:
+                # Check that the gradient does not contain nan or inf values
+                if np.isinf(gradient).sum() > 0 or np.isnan(gradient).sum():
+                    logging.debug("Nan of Inf value in the gradient. Stopping.")
+                    break
 
             update = learning_rate * gradient
             w += update
