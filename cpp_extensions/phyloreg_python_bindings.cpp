@@ -73,12 +73,28 @@ set_examples_and_labels(PyObject *self, PyObject *args){
         }
     }
 
-    // Save the features and labels
-    example_features = (double*)PyArray_DATA(PyArray_GETCONTIGUOUS(X));
-    example_labels = (double*)PyArray_DATA(PyArray_GETCONTIGUOUS(y));
+    // Save the features and labels (create copies)
+    double* example_features_data = (double*)PyArray_DATA(PyArray_GETCONTIGUOUS(X));
+    example_features = new double[X_dim0 * X_dim1];
+    for(int i=0; i < X_dim0; ++i){
+      for(int j=0; j < X_dim1; ++j){
+        example_features[i * X_dim1 + j] = example_features_data[i * X_dim1 + j];
+      }
+    }
+
+    double* example_labels_data = (double*)PyArray_DATA(PyArray_GETCONTIGUOUS(y));
+    example_labels = new double[y_dim0];
+    for(int i=0; i < y_dim0; ++i){
+      example_labels[i] = example_labels_data[i];
+    }
+
     examples_initialized = true;
     n_examples = X_dim0;
     all_initialized = false;
+
+    // Reduce reference count for garbage collector
+    Py_DECREF(X);
+    Py_DECREF(y);
 
     return Py_BuildValue("");
 }
@@ -128,9 +144,21 @@ set_orthologs(PyObject *self, PyObject *args){
     // Access the array data
     double *ortholog_features_data = (double*)PyArray_DATA(PyArray_GETCONTIGUOUS(ortholog_features));
 
+    // Copy data, don't use a pointer to the Python variable
+    double* copy = new double[of_dim0 * of_dim1];
+    for(int i=0; i < of_dim0; ++i){
+      for(int j=0; j < of_dim1; ++j){
+        copy[i * of_dim1 + j] = ortholog_features_data[i * of_dim1 + j];
+      }
+    }
+
     // Save the ortholog matrix for the example
-    example_orthologs.insert(std::pair<int, double*>(example_idx, ortholog_features_data));
+    example_orthologs.insert(std::pair<int, double*>(example_idx, copy));
     all_initialized = false;
+
+    // Reduce reference count for garbage collector
+    // The original array can be deleted, since we have a copy
+    Py_DECREF(ortholog_features);
 
     return Py_BuildValue("");
 }
@@ -169,31 +197,44 @@ set_species_adjacency(PyObject *self, PyObject *args){
         }
     }
 
-    // Access the array data
-    species_adjacency = (double*)PyArray_DATA(PyArray_GETCONTIGUOUS(sa));
+    // Access the array data (create a copy)
+    double* species_adjacency_data = (double*)PyArray_DATA(PyArray_GETCONTIGUOUS(sa));
+    species_adjacency = new double[sa_dim0 * sa_dim1];
+    for(int i=0; i < sa_dim0; ++i){
+      for(int j=0; j < sa_dim1; ++j){
+        species_adjacency[i * sa_dim1 + j] = species_adjacency_data[i * sa_dim1 + j];
+      }
+    }
     species_adjacency_initialized = true;
     all_initialized = false;
+
+    // Reduce reference count for garbage collector
+    // The original array can be deleted, since we have a copy
+    Py_DECREF(sa);
 
     return Py_BuildValue("");
 }
 
 static PyObject *
 reset(PyObject *self, PyObject *args){
-    PyArrayObject *sa; //borrowed
-
-    // Extract the argument values
-    if(!PyArg_ParseTuple(args, "", &PyArray_Type, &sa)){
-        return NULL;
-    }
-
+    for (auto it : example_orthologs)
+        delete [] it.second;
     example_orthologs.clear();
+
+    if (examples_initialized){
+      delete [] example_features;
+      delete [] example_labels;
+    }
+    
+    if (species_adjacency_initialized)
+      delete [] species_adjacency;
+
     n_examples = -1;
     n_features = -1;
     n_species = -1;
     all_initialized = false;
     examples_initialized = false;
     species_adjacency_initialized = false;
-
     return Py_BuildValue("");
 }
 
