@@ -50,7 +50,7 @@ setup(
     url="",
 
     packages=find_packages(),
-    requires=['numpy'],
+    requires=['numpy', 'autograd'],
 
     cmdclass={'build_ext':build_ext},
     ext_modules=[gradient_module],
