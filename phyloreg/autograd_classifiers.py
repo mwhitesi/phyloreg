@@ -101,7 +101,6 @@ class MiniBatchOptimizer(object):
 
 			# Verify that we don't have incorrect values in the gradient
 			if np.isnan(gradient).sum() > 0 or np.isinf(gradient).sum() > 0:
-				print gradient
 				raise NanInfException()
 
 			# On epoch completion
@@ -306,7 +305,7 @@ class AutogradRidgeRegression(BaseEstimator, ClassifierMixin, BasePhyloLearner):
 		loss = 0.0
 		for orthologs in X_orthologs:
 			# An efficient way to compute the manifold part of the loss
-			ortholog_predictions = np.dot(orthologs, w)
+			ortholog_predictions = self._predict(orthologs, w)
 			loss += np.sum(species_graph_adjacency * \
 						   (np.tile(ortholog_predictions,
 									n_species).reshape(n_species, -1).T - \
@@ -375,7 +374,7 @@ class AutogradLogisticRegression(BaseEstimator, ClassifierMixin, BasePhyloLearne
 		loss = 0.0
 		for orthologs in X_orthologs:
 			# An efficient way to compute the manifold part of the loss
-			ortholog_predictions = np.dot(orthologs, w)
+			ortholog_predictions = self._predict(orthologs, w)
 			loss += np.sum(species_graph_adjacency * \
 						   (np.tile(ortholog_predictions,
 									n_species).reshape(n_species, -1).T - \
