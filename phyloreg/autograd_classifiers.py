@@ -16,7 +16,7 @@ import logging
 
 from autograd import grad
 from autograd import numpy as np
-from autograd.optimizers import sgd
+from autograd.util import flatten_func, quick_grad_check
 from functools import partial
 import h5py as h
 from math import ceil
@@ -26,8 +26,21 @@ from sklearn.utils import check_X_y
 from sklearn.utils.graph import graph_laplacian
 
 
+def sgd(grad, init_params, callback=None, num_iters=200, step_size=0.1, mass=0.9):
+    """Stochastic gradient descent with momentum.
+    grad() must have signature grad(x, i), where i is the iteration number."""
+    flattened_grad, unflatten, x = flatten_func(grad, init_params)
+    velocity = np.zeros(len(x))
+    for i in range(num_iters):
+        g = flattened_grad(x, i)
+        if callback: callback(unflatten(x), i, unflatten(g))
+        velocity = mass * velocity - (1.0 - mass) * g
+        x = x + step_size * velocity
+    return unflatten(x)
+
+
 def sigmoid(x):
-	return 1.0 / (1 + np.exp(x))
+	return 0.5*(np.tanh(x) + 1)  # Taken from the autograd example. I believe this is more numerically stable. To be verified!
 
 
 class NoImprovementException(Exception):
@@ -63,7 +76,7 @@ class MiniBatchOptimizer(object):
 		self.patience = patience
 		self.tolerance = tolerance
 
-	def minimize(self, learner, X, y, X_orthologs, species_graph_adjacency):
+	def minimize(self, learner, X, y, X_species, X_orthologs, species_graph_adjacency):
 		"""
 		Assumes that the learner has the following methods:
 		1. _objective: computes the objective function on the entire training set
@@ -75,32 +88,40 @@ class MiniBatchOptimizer(object):
 		def get_batch_idx(iter_nb, n_batches, batch_size):
 			idx = iter_nb % n_batches
 			return slice(idx * batch_size, (idx + 1) * batch_size)
-		get_batch_idx = partial(get_batch_idx, n_batches=int(ceil(1.0 * X.shape[0] / self.batch_size)), batch_size=self.batch_size)
+		n_batches = int(ceil(1.0 * X.shape[0] / self.batch_size))
+		get_batch_idx = partial(get_batch_idx, n_batches=n_batches, batch_size=self.batch_size)
 
 		# Find the number of batches per epoch
-		epoch_steps = int(ceil(1.0 * X.shape[0] / self.batch_size))
+		epoch_steps = n_batches
 
 		# Define objective function and compute its gradient
 		logging.debug("Defining objective and gradient")
-		batch_objective = partial(learner._objective_batch, X=X, y=y, X_orthologs=X_orthologs, species_graph_adjacency=species_graph_adjacency, get_batch_idx=get_batch_idx)
-		objective = partial(learner._objective, X=X, y=y, X_orthologs=X_orthologs, species_graph_adjacency=species_graph_adjacency)
+		batch_objective = partial(learner._objective_batch, X=X, y=y, X_species=X_species, X_orthologs=X_orthologs, species_graph_adjacency=species_graph_adjacency, get_batch_idx=get_batch_idx)
+		objective = partial(learner._objective, X=X, y=y, X_species=X_species, X_orthologs=X_orthologs, species_graph_adjacency=species_graph_adjacency)
 		batch_gradient = grad(batch_objective)
 
-		def clipped_gradient(*argv):
+		# Create a gradient normalizer
+		def clipped_gradient(*args):
 			"""
-			A wrapper that performs gradient clipping on the gradient function
+			Calculates the gradient and rescales it if its norm is too big.
+
+			Note: does not change the direction of the gradient
 
 			"""
-			v = self.gradient_clip_norm
-			g = batch_gradient(*argv)
-			if np.linalg.norm(g) > v:
-				g = (g / np.linalg.norm(g)) * v
+			g = batch_gradient(*args)
+			g_norm = np.linalg.norm(g, ord=2)
+			if g_norm > self.gradient_clip_norm:
+				g /= g_norm
+				g *= self.gradient_clip_norm
 			return g
 
-		# Callback function for logging optimization progress
-		best_obj = dict(val=np.infty, since=0, w=None)
-		def log_progress(params, iter_nb, gradient):
+		# Verify that the automatically generated gradient is OK
+		# logging.debug("Checking the gradient")
+		# quick_grad_check(objective, np.random.RandomState(42).rand(X.shape[1]), verbose=False)
+		# logging.debug("Gradient is OK")
 
+		# Callback function for logging optimization progress
+		def log_progress(params, iter_nb, gradient, best_solution_log):
 			# Verify that we don't have incorrect values in the gradient
 			if np.isnan(gradient).sum() > 0 or np.isinf(gradient).sum() > 0:
 				raise NanInfException()
@@ -127,25 +148,40 @@ class MiniBatchOptimizer(object):
 				if best_obj["since"] >= self.patience:
 					raise NoImprovementException(best_obj["since"])
 
-		# Parameter initialization
-		w = np.random.rand(X.shape[1])
-
 		# Gradient decent
 		try:
+			# Initialize optimization variables
+			logging.debug("Initializing the optimization variables")
+			w = np.random.RandomState(42).rand(X.shape[1])
+			# XXX: If our functions are convex, the initialization should not matter.
+
+			# Reset the best solution dict
+			logging.debug("Creating progress logger")
+			best_obj = dict(val=np.infty, since=0, w=None)
+			log_progress = partial(log_progress, best_solution_log=best_obj)
+
+			# Start optimizing
 			logging.debug("Optimization start")
 			sgd(clipped_gradient, w, callback=log_progress, num_iters=self.max_epochs * epoch_steps, step_size=self.learning_rate, mass=0.9)
+
+			# If we reach this point, we have reached the max number of epochs
 			logging.debug("The optimizer reached the maximum number of epochs without converging. Consider increasing it.")
+
 		except NoImprovementException as e:
+			# Convergence has been reached
 			logging.debug("The objective has not improved for {0:d} iterations. Stopping.".format(e.how_long))
+
 		except NanInfException:
-			logging.debug("A nan or inf value was encountered in the gradient. Stopping.")
+			# The gradient contains invalid values. That's not good, debug.
+			logging.debug("A nan or inf value was encountered in the gradient. Stopping. Consider debugging the objective functions and making sure that they are numerically stable.")
+
 		logging.debug("Optimization stop")
 
 		# Return the parameters that match the best observed objective value
 		return best_obj["w"]
 
 
-def generate_ortholog_feature_matrices(X, X_species, orthologs, species_graph_names, fit_intercept):
+def generate_ortholog_feature_matrices(X, orthologs, species_graph_names, fit_intercept):
 	"""
 	Convert the orthologs into a format that is easy to manipulate. We could optimize this
 	by requiring that the ortholog data be preformated before training. This would avoid
@@ -175,10 +211,10 @@ class BasePhyloLearner(object):
 	def __init__(self):
 		self.w = None
 
-	def _objective(self, w, X, y, X_orthologs, species_graph_adjacency):
+	def _objective(self, w, X, y, X_species, X_orthologs, species_graph_adjacency):
 		raise NotImplementedError()
 
-	def _objective_batch(self, w, iter_nb, X, y, X_orthologs,
+	def _objective_batch(self, w, iter_nb, X, y, X_species, X_orthologs,
 						 species_graph_adjacency, get_batch_idx):
 		"""
 		Compute the objective function on a mini-batch
@@ -186,7 +222,8 @@ class BasePhyloLearner(object):
 		"""
 		batch_slice = get_batch_idx(iter_nb)
 		return self._objective(w, X[batch_slice], y[batch_slice],
-							   X_orthologs[batch_slice], species_graph_adjacency)
+							   X_species[batch_slice], X_orthologs[batch_slice],
+							   species_graph_adjacency)
 
 	def fit(self, X, X_species, y, orthologs, species_graph_adjacency, species_graph_names):
 		"""Fit the model
@@ -228,7 +265,7 @@ class BasePhyloLearner(object):
 			X = np.hstack((X, np.ones(X.shape[0]).reshape(-1, 1)))  # Add a feature for each example that serves as bias
 
 		# Generate the ortholog feature matrix for each example
-		X_orthologs = generate_ortholog_feature_matrices(X, X_species, orthologs, species_graph_names, self.fit_intercept)
+		X_orthologs = generate_ortholog_feature_matrices(X, orthologs, species_graph_names, self.fit_intercept)
 
 		# Optimize the objective function
 		optimizer = MiniBatchOptimizer(learning_rate=self.opti_lr,
@@ -237,7 +274,7 @@ class BasePhyloLearner(object):
 									   batch_size=self.opti_batch_size,
 									   max_epochs=self.opti_max_epochs,
 									   gradient_clip_norm=self.opti_clip_norm)
-		self.w = optimizer.minimize(self, X, y, X_orthologs, species_graph_adjacency)
+		self.w = optimizer.minimize(self, X, y, X_species, X_orthologs, species_graph_adjacency)
 
 	def predict(self, X):
 		"""Compute predictions using the learned model
@@ -298,7 +335,7 @@ class AutogradRidgeRegression(BaseEstimator, ClassifierMixin, BasePhyloLearner):
 		super(AutogradRidgeRegression, self).__init__()
 
 	def _objective_squared_loss(self, w, X, y):
-		return (1. / X.shape[0]) * np.linalg.norm(np.dot(X, w) - y, ord=2)**2
+		return (1. / X.shape[0]) * np.linalg.norm(self._predict(X, w) - y, ord=2)**2
 
 	def _objective_l2_norm(self, w):
 		return np.dot(w, w)
@@ -317,7 +354,7 @@ class AutogradRidgeRegression(BaseEstimator, ClassifierMixin, BasePhyloLearner):
 										ortholog_predictions)**2)
 		return loss / len(X_orthologs)
 
-	def _objective(self, w, X, y, X_orthologs, species_graph_adjacency):
+	def _objective(self, w, X, y, X_species, X_orthologs, species_graph_adjacency):
 		return self._objective_squared_loss(w, X, y) + \
 			   self.alpha * self._objective_l2_norm(w) + \
 			   self.beta * self._objective_orthologs(w, X_orthologs, species_graph_adjacency)
@@ -350,12 +387,15 @@ class AutogradLogisticRegression(BaseEstimator, ClassifierMixin, BasePhyloLearne
 	w : array_like, dtype=float
 		The fitted model's coefficients (last value is the intercept if fit_intercept=True).
 
+	Note: non-convex objective
+
 	"""
-	def __init__(self, alpha=1.0, beta=1.0, fit_intercept=False, opti_lr=1e-4,
-				 opti_max_epochs=1e2, opti_tol=1e-6, opti_patience=5,
+	def __init__(self, alpha=1.0, beta=1.0, gamma=0.0, fit_intercept=False,
+				 opti_lr=1e-4, opti_max_epochs=1e2, opti_tol=1e-6, opti_patience=5,
 				 opti_batch_size=10, opti_clip_norm=10.):
 		self.alpha = float(alpha)
 		self.beta = float(beta)
+		self.gamma = float(gamma)
 		self.fit_intercept = fit_intercept
 		self.opti_lr = opti_lr
 		self.opti_max_epochs = opti_max_epochs
@@ -366,9 +406,10 @@ class AutogradLogisticRegression(BaseEstimator, ClassifierMixin, BasePhyloLearne
 		super(AutogradLogisticRegression, self).__init__()
 
 	def _objective_negative_log_likelihood(self, w, X, y):
-		x_predictions = sigmoid(np.dot(X, w))
-		y_probabilities = x_predictions * y + (1. - x_predictions) * (1. - y)
-		return -np.sum(np.log(y_probabilities)) / X.shape[0]
+		p = np.dot(X, w)  # Note: no sigmoid
+		# Numerically stable variant of the negative log likelihood
+		# Taken from http://imgur.com/jivpFK1
+		return np.sum(-(p * (y - 1. * (p >= 0))) - np.log(1. + np.exp(p - 2. * p * (p >= 0))))
 
 	def _objective_l2_norm(self, w):
 		return np.dot(w, w)
@@ -379,18 +420,111 @@ class AutogradLogisticRegression(BaseEstimator, ClassifierMixin, BasePhyloLearne
 			n_species = len(orthologs["species_idx"])
 			if n_species > 0:
 				# An efficient way to compute the manifold part of the loss
-				ortholog_predictions = self._predict(orthologs["features"], w)
+				ortholog_predictions = self._predict(orthologs["features"], w=w)
 				A = species_graph_adjacency[orthologs["species_idx"]][:, orthologs["species_idx"]]
-				loss += np.sum(A * \
-							   (np.tile(ortholog_predictions,
-										n_species).reshape(n_species, -1).T - \
-										ortholog_predictions)**2)
+				pairwise_prediction_difference = np.tile(ortholog_predictions, n_species).reshape(n_species, -1).T - ortholog_predictions
+				loss += np.sum(A * (pairwise_prediction_difference)**2.)
 		return loss / len(X_orthologs)
 
-	def _objective(self, w, X, y, X_orthologs, species_graph_adjacency):
+	def _objective_orthologs_supervised(self, w, X, y, X_species, X_orthologs, species_graph_adjacency):
+		loss = 0.0
+		for i, orthologs in enumerate(X_orthologs):
+			n_species = len(orthologs["species_idx"])
+			if n_species > 0:
+				label = y[i]
+				x_species = X_species[i]
+				# TODO: replace this by the similarity between the species when we have the distances
+				# a = species_graph_adjacency[x_species][orthologs["species_idx"]]
+				a = np.ones(n_species)
+				p = np.dot(orthologs["features"], w)  # See the NLL term for details about the 2 next lines
+				loss += np.sum(a * -(p * (label - 1. * (p >= 0))) - np.log(1. + np.exp(p - 2. * p * (p >= 0))))
+		return loss / len(X_orthologs)
+
+	def _objective(self, w, X, y, X_species, X_orthologs, species_graph_adjacency):
 		return self._objective_negative_log_likelihood(w, X, y) + \
 			   self.alpha * self._objective_l2_norm(w) + \
-			   self.beta * self._objective_orthologs(w, X_orthologs, species_graph_adjacency)
+			   self.beta * self._objective_orthologs(w, X_orthologs, species_graph_adjacency) + \
+			   self.gamma * self._objective_orthologs_supervised(w, X, y, X_species, X_orthologs, species_graph_adjacency)
+
+	def _predict(self, X, w=None):
+		if w is None:
+			w = self.w
+		return sigmoid(np.dot(X, w)).reshape(-1,)
+
+
+class AutogradLogisticRegressionProbabilisticOrthologs(BaseEstimator, ClassifierMixin, BasePhyloLearner):
+	"""Logistic regression species-level with probabilistic estimates of the
+	labels of orthologous sequences. This is different from the phylogenetic
+	regularizer based on manifold regularization.
+
+	Autograd is used to compute the objective function gradients and the objective
+	is minimized using gradient descent.
+
+	Parameters
+	----------
+	alpha : float
+		Hyperparameter for the L2 norm regularizer. Greater values lead to stronger regularization.
+	beta : float
+		Hyperparameter for the phylogenetic regularization. Greater values lead to stronger regularization. Zero discards
+		the phylogenetic regularizer and leads to regular ridge regression.
+	fit_intercept: bool
+		Whether to calculate the intercept for this model. If set to false, no intercept will be used in calculations
+		(e.g. data is expected to be already centered).
+
+	Attributes
+	----------
+	w : array_like, dtype=float
+		The fitted model's coefficients (last value is the intercept if fit_intercept=True).
+
+	Note: non-convex objective
+
+	"""
+	def __init__(self, alpha=1.0, beta=1.0, gamma=0.0, fit_intercept=False,
+				 opti_lr=1e-4, opti_max_epochs=1e2, opti_tol=1e-6, opti_patience=5,
+				 opti_batch_size=10, opti_clip_norm=10.):
+		self.alpha = float(alpha)
+		self.beta = float(beta)
+		self.gamma = float(gamma)
+		self.fit_intercept = fit_intercept
+		self.opti_lr = opti_lr
+		self.opti_max_epochs = opti_max_epochs
+		self.opti_tol = opti_tol
+		self.opti_batch_size = opti_batch_size
+		self.opti_patience = opti_patience
+		self.opti_clip_norm = float(opti_clip_norm)
+		super(AutogradLogisticRegressionProbabilisticOrthologs, self).__init__()
+
+	def _objective_negative_log_likelihood(self, w, X, y):
+		p = np.dot(X, w)  # Note: no sigmoid
+		# Numerically stable variant of the negative log likelihood
+		# Taken from http://imgur.com/jivpFK1
+		return np.sum(-(p * (y - 1. * (p >= 0))) - np.log(1. + np.exp(p - 2. * p * (p >= 0))))
+
+	def _objective_l2_norm(self, w):
+		return np.dot(w, w)
+
+	def _objective_orthologs(self, w, y, X_orthologs, species_graph_adjacency):
+		loss = 0.0
+
+		for i, orthologs in enumerate(X_orthologs):
+			n_species = len(orthologs["species_idx"])
+			if n_species > 0:
+				# An efficient way to compute the manifold part of the loss
+				label = y[i]
+				ortholog_predictions = self._predict(orthologs["features"], w=w)
+				p_no_change = species_graph_adjacency[0][orthologs["species_idx"]]
+
+				loss += sum(
+					(label * p_no_change + (1. - label) * (1. - p_no_change)) * -1. * np.log(ortholog_predictions) + \
+					(label * (1. - p_no_change) + (1. - label) * p_no_change) * -1 * np.log(1. - ortholog_predictions)
+					)
+
+		return loss
+
+	def _objective(self, w, X, y, X_species, X_orthologs, species_graph_adjacency):
+		return self._objective_negative_log_likelihood(w, X, y) + \
+			   self.alpha * self._objective_l2_norm(w) + \
+			   self.beta * self._objective_orthologs(w, y, X_orthologs, species_graph_adjacency)
 
 	def _predict(self, X, w=None):
 		if w is None:
@@ -409,7 +543,9 @@ if __name__ == "__main__":
 	A = np.random.rand(100, 100)
 	A = np.dot(A.T, A)
 
-	clf = AutogradLogisticRegression(alpha=1e-9, beta=1e-9, opti_lr=1e-1, opti_max_epochs=500)
+	clf = AutogradLogisticRegression(alpha=1e-100, beta=1e-5, gamma=1e-5,
+									 opti_lr=1e-2, opti_max_epochs=500,
+									 opti_clip_norm=100000.)
 	clf.fit(X=X,
 			X_species=[0] * len(y),
 			y=y,
