@@ -54,7 +54,7 @@ class FeatureFromSeq:
             sptag = line[1].split('.')[0].replace('_', '')
             seq = line[2]
             feature_vector = self.kmerCount(seq)
-            
+
             region_label = 1.0 if 'pos' in region_tag else 0.0
 
             # check if region belongs to labelled species
@@ -65,13 +65,13 @@ class FeatureFromSeq:
 
             else:
                 if labelled_example_idx not in all_orthologs_info.keys():
-                    all_orthologs_info[labelled_example_idx] = {'species': np.asarray(sptag, dtype=np.str),
+                    all_orthologs_info[labelled_example_idx] = {'species': np.asarray([sptag], dtype=np.str),
                                                                 'X': feature_vector}
 
                 else:
-                    all_orthologs_info[labelled_example_idx]['species'] = np.append(
-                                                                    all_orthologs_info[labelled_example_idx]['species'],
-                                                                    sptag )
+                    all_orthologs_info[labelled_example_idx]['species'] = \
+                        np.hstack((all_orthologs_info[labelled_example_idx]['species'],
+                                   sptag))
                     all_orthologs_info[labelled_example_idx]['X'] = np.vstack(
                                                                     (all_orthologs_info[labelled_example_idx]['X'],
                                                                     feature_vector)
