@@ -47,11 +47,14 @@ class FeatureFromSeq:
             logging.debug('line: %s', line)
             line = line.strip().split()
             region_tag = line[0]
-            labelled_example_idx = int(region_tag.split('_')[1].split('region')[1])
+            # TODO: Temporary fix for new file format (4.2k). Uncomment if using old seqadded files
+            #labelled_example_idx = int(region_tag.split('_')[1].split('region')[1])
+            labelled_example_idx = int(region_tag.split('_')[3].split('region')[1].split("-")[0])
             logging.debug('example_id: %s', labelled_example_idx)
             sptag = line[1].split('.')[0].replace('_', '')
             seq = line[2]
             feature_vector = self.kmerCount(seq)
+            
             region_label = 1.0 if 'pos' in region_tag else 0.0
 
             # check if region belongs to labelled species
@@ -59,7 +62,7 @@ class FeatureFromSeq:
                 labels[labelled_example_idx] = region_label
                 labelled_features[labelled_example_idx] = feature_vector
                 labelled_species[labelled_example_idx] = sptag
-               
+
             else:
                 if labelled_example_idx not in all_orthologs_info.keys():
                     all_orthologs_info[labelled_example_idx] = {'species': np.asarray(sptag, dtype=np.str),
@@ -173,9 +176,3 @@ if __name__ == '__main__':
     #
     # for k,v in feature_info['ortho_info'].items():
     #     print (k, len(v['X']))
-
-
-
-    
-
-
